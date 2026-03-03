@@ -29,7 +29,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     );
   }
 
-  const member = await prisma.member.findFirst({ where: { id, deletedAt: null } });
+  const member = await prisma.member.findFirst({
+    where: { id, deletedAt: null },
+    include: { userAccount: true },
+  });
   if (!member) {
     return NextResponse.json(
       { error: { code: "NOT_FOUND", message: "メンバーが見つかりません" } },
@@ -54,47 +57,60 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
   const { email, phone, address, bankName, bankBranch, bankAccountNumber, bankAccountHolder } = parsed.data;
 
-  const emailChanged = email !== undefined && email !== member.email;
+  const emailChanged = email !== undefined && email !== member.userAccount?.email;
 
-  const updated = await prisma.member.update({
-    where: { id },
-    data: {
-      ...(email !== undefined && { email }),
-      ...(phone !== undefined && { phone }),
-      ...(address !== undefined && { address }),
-      ...(bankName !== undefined && { bankName }),
-      ...(bankBranch !== undefined && { bankBranch }),
-      ...(bankAccountNumber !== undefined && { bankAccountNumber }),
-      ...(bankAccountHolder !== undefined && { bankAccountHolder }),
-    },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      phone: true,
-      address: true,
-      bankName: true,
-      bankBranch: true,
-      bankAccountNumber: true,
-      bankAccountHolder: true,
-    },
-  });
+  const [updatedMember, updatedUser] = await prisma.$transaction([
+    prisma.member.update({
+      where: { id },
+      data: {
+        ...(phone !== undefined && { phone }),
+        ...(address !== undefined && { address }),
+        ...(bankName !== undefined && { bankName }),
+        ...(bankBranch !== undefined && { bankBranch }),
+        ...(bankAccountNumber !== undefined && { bankAccountNumber }),
+        ...(bankAccountHolder !== undefined && { bankAccountHolder }),
+      },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        address: true,
+        bankName: true,
+        bankBranch: true,
+        bankAccountNumber: true,
+        bankAccountHolder: true,
+      },
+    }),
+    emailChanged
+      ? prisma.userAccount.update({
+          where: { memberId: id },
+          data: { email: email! },
+          select: { email: true },
+        })
+      : prisma.userAccount.findUnique({
+          where: { memberId: id },
+          select: { email: true },
+        }),
+  ]);
 
   // メール変更時の通知（SMTP未設定ならスキップ）
-  if (emailChanged && updated.email) {
+  if (emailChanged && updatedUser?.email) {
     await sendEmail({
-      to: updated.email,
+      to: updatedUser.email,
       subject: "【SALT2 OPS】メールアドレスを更新しました",
       text: [
-        `${updated.name} さん`,
+        `${updatedMember.name} さん`,
         "",
         "SALT2 OPS でアカウントのメールアドレスが更新されました。",
-        `新しいメールアドレス: ${updated.email}`,
+        `新しいメールアドレス: ${updatedUser.email}`,
         "",
         "もし心当たりがない場合は管理者までご連絡ください。",
       ].join("\n"),
     }).catch(() => { /* 送信失敗は握りつぶす（ログ不要） */ });
   }
 
-  return NextResponse.json(updated);
+  return NextResponse.json({
+    ...updatedMember,
+    email: updatedUser?.email ?? member.userAccount?.email ?? null,
+  });
 }
