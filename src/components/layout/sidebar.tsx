@@ -100,6 +100,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               return (
                 <li key={item.href}>
                   <Link
+                    prefetch
                     href={item.href}
                     className={cn(
                       "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
