@@ -23,7 +23,9 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     }
   }, [isLoading, isLoggedIn, router]);
 
-  if (isLoading || !isLoggedIn) {
+  // middleware がセッションクッキーの存在を保証しているため isLoading 中もレイアウトを描画する
+  // セッション切れ時は useEffect がリダイレクトし、その直前のみスピナーを表示する
+  if (!isLoading && !isLoggedIn) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
