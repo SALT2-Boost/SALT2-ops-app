@@ -373,8 +373,9 @@ export default function CalendarPage() {
   const [anchor,        setAnchor]        = useState(() => new Date());
   const [displayYear,   setDisplayYear]   = useState(() => new Date().getFullYear());
   const [displayMonth,  setDisplayMonth]  = useState(() => new Date().getMonth() + 1);
+  // 初期は自分のみ（管理者も含む）。必要に応じて全選択ボタンで拡張。
   const [selectedIds,   setSelectedIds]   = useState<Set<string>>(
-    () => (isAdmin ? new Set() : new Set(myMemberId ? [myMemberId] : []))
+    () => new Set(myMemberId ? [myMemberId] : [])
   );
   const [selectedProjId, setSelectedProjId] = useState<string>("");
   const [calData,       setCalData]       = useState<CalData>({ members: [], schedules: [], attendances: [], projects: [] });
@@ -395,9 +396,8 @@ export default function CalendarPage() {
       const data: CalData = await res.json();
       setCalData(data);
       if (!initialized.current && data.members.length > 0) {
-        // 初回は現在選択が空なら取得した先頭を選択
         if (selectedIds.size === 0) {
-          setSelectedIds(new Set(isAdmin ? data.members.map(m => m.id) : [data.members[0].id]));
+          setSelectedIds(new Set(myMemberId ? [myMemberId] : [data.members[0].id]));
         }
         initialized.current = true;
       }
