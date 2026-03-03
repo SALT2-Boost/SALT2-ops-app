@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, Download, CheckCircle, XCircle } from "lucide-react";
+import { ArrowLeft, Download, CheckCircle, XCircle, Plus } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +54,11 @@ export default function AttendanceListPage() {
   const [loading, setLoading] = useState(true);
   const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set());
   const [rejectedIds, setRejectedIds] = useState<Set<string>>(new Set());
+
+  // 打刻申請フォーム
+  const [newForm, setNewForm] = useState<{ open: boolean; date: string; clockIn: string; clockOut: string; breakMinutes: string; submitting: boolean; error: string }>({
+    open: false, date: "", clockIn: "", clockOut: "", breakMinutes: "0", submitting: false, error: "",
+  });
 
   // メンバー一覧（admin/manager 用）
   useEffect(() => {
@@ -121,6 +126,58 @@ export default function AttendanceListPage() {
 
   const targetMember = members.find((m) => m.id === targetMemberId);
 
+  async function handleNewFormSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setNewForm((f) => ({ ...f, submitting: true, error: "" }));
+    const body: Record<string, unknown> = {
+      date: newForm.date,
+      clockIn: newForm.clockIn || null,
+      clockOut: newForm.clockOut || null,
+      breakMinutes: Number(newForm.breakMinutes),
+    };
+    if (isAdmin && targetMemberId) body.memberId = targetMemberId;
+    const res = await fetch("/api/attendances", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      const created: AttendanceRecord = await res.json();
+      setRecords((prev) => {
+        const merged = [...prev, created].sort((a, b) => a.date.localeCompare(b.date));
+        return merged;
+      });
+      setNewForm({ open: false, date: "", clockIn: "", clockOut: "", breakMinutes: "0", submitting: false, error: "" });
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setNewForm((f) => ({ ...f, submitting: false, error: data?.error?.message ?? "申請に失敗しました" }));
+    }
+  }
+
+  function handleCSVDownload() {
+    const header = ["日付", "出勤", "退勤", "休憩(分)", "実働(h)", "状態", "今日やったこと"];
+    const rows = records.map((r) => [
+      r.date,
+      r.clockIn ?? "",
+      r.clockOut ?? "",
+      String(r.breakMinutes),
+      r.actualHours != null ? String(r.actualHours) : "",
+      STATUS_LABELS[r.status] ?? r.status,
+      r.doneToday ?? "",
+    ]);
+    const csv = [header, ...rows]
+      .map((row) => row.map((v) => `"${v.replace(/"/g, '""')}"`).join(","))
+      .join("\r\n");
+    const bom = "\uFEFF";
+    const blob = new Blob([bom + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `勤怠_${targetMember?.name ?? "自分"}_${month}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -180,8 +237,67 @@ export default function AttendanceListPage() {
             <span className="text-sm font-semibold text-slate-700">
               {targetMember ? targetMember.name : "自分"} — {month.replace("-", "年")}月 勤怠詳細
             </span>
-            <Button variant="outline" size="sm"><Download size={14} /> CSV出力</Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setNewForm((f) => ({ ...f, open: !f.open, error: "" }))}>
+                <Plus size={14} /> 打刻申請
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleCSVDownload}><Download size={14} /> CSV出力</Button>
+            </div>
           </div>
+
+          {/* 新規打刻申請フォーム */}
+          {newForm.open && (
+            <form onSubmit={handleNewFormSubmit} className="px-4 py-3 bg-blue-50 border-b border-blue-100 flex flex-wrap gap-3 items-end">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-500">日付</label>
+                <input
+                  type="date"
+                  required
+                  min={`${month}-01`}
+                  max={`${month}-31`}
+                  value={newForm.date}
+                  onChange={(e) => setNewForm((f) => ({ ...f, date: e.target.value }))}
+                  className="rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-500">出勤時刻</label>
+                <input
+                  type="time"
+                  value={newForm.clockIn}
+                  onChange={(e) => setNewForm((f) => ({ ...f, clockIn: e.target.value }))}
+                  className="rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-500">退勤時刻</label>
+                <input
+                  type="time"
+                  value={newForm.clockOut}
+                  onChange={(e) => setNewForm((f) => ({ ...f, clockOut: e.target.value }))}
+                  className="rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-500">休憩（分）</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="5"
+                  value={newForm.breakMinutes}
+                  onChange={(e) => setNewForm((f) => ({ ...f, breakMinutes: e.target.value }))}
+                  className="w-20 rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div className="flex items-end gap-2">
+                <Button type="submit" size="sm" disabled={newForm.submitting}>
+                  {newForm.submitting ? "送信中…" : "申請"}
+                </Button>
+                <button type="button" onClick={() => setNewForm((f) => ({ ...f, open: false, error: "" }))} className="text-xs text-slate-400 hover:text-slate-600">キャンセル</button>
+              </div>
+              {newForm.error && <p className="w-full text-xs text-red-500">{newForm.error}</p>}
+            </form>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-100">

@@ -9,6 +9,19 @@ function forbidden() {
   return NextResponse.json({ error: { code: "FORBIDDEN", message: "権限がありません" } }, { status: 403 });
 }
 
+function toTimeStr(dt: Date | null): string | null {
+  if (!dt) return null;
+  return `${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+}
+
+function parseTimeOnDate(baseDate: Date, timeStr: string | null): Date | null {
+  if (!timeStr || !/^\d{2}:\d{2}$/.test(timeStr)) return null;
+  const [h, m] = timeStr.split(":").map(Number);
+  const d = new Date(baseDate);
+  d.setHours(h, m, 0, 0);
+  return d;
+}
+
 // ─── GET /api/attendances?memberId=&month=YYYY-MM ─────────
 export async function GET(req: NextRequest) {
   const user = await getSessionUser();
@@ -78,4 +91,87 @@ export async function GET(req: NextRequest) {
       };
     })
   );
+}
+
+// ─── POST /api/attendances ─────────────────────────────────
+// 本人: 打刻記録がない日に新規申請（status='modified', confirmStatus='unconfirmed'）
+// admin/manager: 任意メンバーの日付を指定して新規作成
+export async function POST(req: NextRequest) {
+  const user = await getSessionUser();
+  if (!user) return unauthorized();
+
+  const body = await req.json().catch(() => null);
+  if (!body) {
+    return NextResponse.json({ error: { code: "BAD_REQUEST", message: "リクエストボディが不正です" } }, { status: 400 });
+  }
+
+  const isAdminOrManager = ["admin", "manager"].includes(user.role);
+  const memberId = (isAdminOrManager && body.memberId) ? body.memberId : user.memberId;
+
+  if (!memberId) return unauthorized();
+
+  // 自分以外のデータは admin/manager のみ
+  if (memberId !== user.memberId && !isAdminOrManager) return forbidden();
+
+  const { date, clockIn, clockOut, breakMinutes } = body;
+
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return NextResponse.json(
+      { error: { code: "VALIDATION_ERROR", message: "date は YYYY-MM-DD 形式で指定してください" } },
+      { status: 400 }
+    );
+  }
+
+  const dateObj = new Date(`${date}T00:00:00`);
+
+  // 同日のレコードが既にある場合は拒否
+  const existing = await prisma.attendance.findFirst({
+    where: { memberId, date: dateObj },
+  });
+  if (existing) {
+    return NextResponse.json(
+      { error: { code: "CONFLICT", message: "該当日の勤怠記録が既に存在します。修正申請を使用してください。" } },
+      { status: 409 }
+    );
+  }
+
+  const newClockIn = parseTimeOnDate(dateObj, clockIn ?? null);
+  const newClockOut = parseTimeOnDate(dateObj, clockOut ?? null);
+  const breaks = Math.max(0, Number(breakMinutes ?? 0));
+
+  let workMinutes: number | undefined;
+  if (newClockIn && newClockOut) {
+    workMinutes = Math.max(0, Math.round((newClockOut.getTime() - newClockIn.getTime()) / 60000) - breaks);
+  }
+
+  const created = await prisma.attendance.create({
+    data: {
+      memberId,
+      date: dateObj,
+      clockIn: newClockIn,
+      clockOut: newClockOut,
+      breakMinutes: breaks,
+      ...(workMinutes !== undefined ? { workMinutes } : {}),
+      status: "modified",
+      confirmStatus: "unconfirmed",
+    },
+  });
+
+  const actualHours = created.workMinutes != null
+    ? Math.round((created.workMinutes / 60) * 10) / 10
+    : null;
+
+  return NextResponse.json({
+    id: created.id,
+    date: created.date.toISOString().slice(0, 10),
+    clockIn: toTimeStr(created.clockIn),
+    clockOut: toTimeStr(created.clockOut),
+    breakMinutes: created.breakMinutes,
+    actualHours,
+    status: "done",
+    confirmStatus: created.confirmStatus,
+    todoToday: null,
+    doneToday: null,
+    isModified: true,
+  }, { status: 201 });
 }
