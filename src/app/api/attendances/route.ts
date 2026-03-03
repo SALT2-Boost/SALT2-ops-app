@@ -31,7 +31,10 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const memberId = searchParams.get("memberId") ?? user.memberId;
-  const month = searchParams.get("month") ?? new Date().toISOString().slice(0, 7);
+  const month = searchParams.get("month") ?? (() => {
+    const jstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    return `${jstNow.getUTCFullYear()}-${String(jstNow.getUTCMonth() + 1).padStart(2, "0")}`;
+  })();
 
   // 他人のデータは admin/manager のみ
   if (memberId !== user.memberId && !["admin", "manager"].includes(user.role)) {
@@ -62,7 +65,9 @@ export async function GET(req: NextRequest) {
 
       // status 判定（DB status は 'normal'|'modified'|'absent'）
       let displayStatus: string;
-      if (r.status === "absent") {
+      if (r.status === "modified" && r.confirmStatus === "unconfirmed") {
+        displayStatus = "pending_approval";
+      } else if (r.status === "absent") {
         displayStatus = "absent";
       } else if (r.clockOut) {
         displayStatus = "done";
@@ -165,7 +170,7 @@ export async function POST(req: NextRequest) {
     clockOut: toTimeStr(created.clockOut),
     breakMinutes: created.breakMinutes,
     actualHours,
-    status: "done",
+    status: "pending_approval",
     confirmStatus: created.confirmStatus,
     todoToday: null,
     doneToday: null,

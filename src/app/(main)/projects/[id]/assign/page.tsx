@@ -60,7 +60,7 @@ export default function AssignPage({ params }: { params: { id: string } }) {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
   const [form, setForm] = useState({ memberId: "", positionId: "", workloadHours: "80", startDate: today });
   const [positionMode, setPositionMode] = useState<"existing" | "new">("existing");
   const [newPositionName, setNewPositionName] = useState("");

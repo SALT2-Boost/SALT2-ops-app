@@ -13,7 +13,10 @@ export async function GET(req: NextRequest) {
   if (!user) return unauthorized();
 
   const { searchParams } = new URL(req.url);
-  const month = searchParams.get("month") ?? new Date().toISOString().slice(0, 7);
+  const month = searchParams.get("month") ?? (() => {
+    const jstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    return `${jstNow.getUTCFullYear()}-${String(jstNow.getUTCMonth() + 1).padStart(2, "0")}`;
+  })();
 
   // アクティブなプロジェクト
   const projects = await prisma.project.findMany({

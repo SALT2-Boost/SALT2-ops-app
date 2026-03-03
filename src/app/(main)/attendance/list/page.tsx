@@ -32,10 +32,10 @@ interface MemberOption {
 // ─── スタイル ────────────────────────────────────────────
 
 const statusVariant: Record<string, "success" | "warning" | "default" | "danger"> = {
-  working: "success", break: "warning", done: "default", not_started: "default", absent: "danger",
+  working: "success", break: "warning", done: "default", not_started: "default", absent: "danger", pending_approval: "warning",
 };
 const STATUS_LABELS: Record<string, string> = {
-  working: "出勤中", break: "休憩中", done: "退勤済", not_started: "未出勤", absent: "欠勤",
+  working: "出勤中", break: "休憩中", done: "退勤済", not_started: "未出勤", absent: "欠勤", pending_approval: "承認待ち",
 };
 
 // ─── ページ ───────────────────────────────────────────────
@@ -87,9 +87,10 @@ export default function AttendanceListPage() {
     loadRecords();
   }, [loadRecords]);
 
-  // 集計
-  const totalHours = records.reduce((s, r) => s + (r.actualHours ?? 0), 0);
-  const workDays = records.filter((r) => r.status !== "not_started" && r.status !== "absent").length;
+  // 集計（承認待ちは集計に含めない）
+  const approvedRecords = records.filter((r) => r.status !== "pending_approval");
+  const totalHours = approvedRecords.reduce((s, r) => s + (r.actualHours ?? 0), 0);
+  const workDays = approvedRecords.filter((r) => r.status !== "not_started" && r.status !== "absent").length;
   const absentDays = records.filter((r) => r.status === "absent").length;
 
   async function handleApprove(id: string) {
@@ -291,7 +292,7 @@ export default function AttendanceListPage() {
               </div>
               <div className="flex items-end gap-2">
                 <Button type="submit" size="sm" disabled={newForm.submitting}>
-                  {newForm.submitting ? "送信中…" : "申請"}
+                  {newForm.submitting ? "送信中…" : "承認依頼を送る"}
                 </Button>
                 <button type="button" onClick={() => setNewForm((f) => ({ ...f, open: false, error: "" }))} className="text-xs text-slate-400 hover:text-slate-600">キャンセル</button>
               </div>
@@ -316,7 +317,8 @@ export default function AttendanceListPage() {
                 {records.map((rec) => {
                   const approved = approvedIds.has(rec.id) || rec.confirmStatus === "approved";
                   const rejected = rejectedIds.has(rec.id) || rec.confirmStatus === "rejected";
-                  const isToday = rec.date === new Date().toISOString().slice(0, 10);
+                  const jstToday = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+                  const isToday = rec.date === jstToday;
                   return (
                     <tr
                       key={rec.id}

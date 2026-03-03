@@ -29,7 +29,8 @@ export async function GET() {
 
   function toTimeStr(dt: Date | null): string | null {
     if (!dt) return null;
-    return `${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+    const jst = new Date(dt.getTime() + 9 * 60 * 60 * 1000);
+    return `${String(jst.getUTCHours()).padStart(2, "0")}:${String(jst.getUTCMinutes()).padStart(2, "0")}`;
   }
 
   return NextResponse.json(

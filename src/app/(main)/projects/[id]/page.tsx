@@ -85,7 +85,7 @@ function formatCurrency(n: number): string {
 }
 function toDateInput(d: string | null): string {
   if (!d) return "";
-  return new Date(d).toISOString().slice(0, 10);
+  return new Date(d).toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
 }
 
 // ─── ページ ───────────────────────────────────────────────
@@ -119,7 +119,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
   const [assignSaving, setAssignSaving] = useState(false);
   const [assignError, setAssignError] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
   const [assignForm, setAssignForm] = useState({ memberId: "", positionId: "", workloadHours: "80", startDate: today });
   const [positionMode, setPositionMode] = useState<"existing" | "new">("existing");
   const [newPositionName, setNewPositionName] = useState("");

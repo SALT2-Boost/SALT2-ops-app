@@ -6,8 +6,9 @@ export async function GET() {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // JST 基準の「今日」0時を計算
+  const jstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const today = new Date(Date.UTC(jstNow.getUTCFullYear(), jstNow.getUTCMonth(), jstNow.getUTCDate()));
   const todayStr = today.toISOString().slice(0, 10);
   const isAdmin = user.role === "admin" || user.role === "manager";
 
@@ -19,7 +20,8 @@ export async function GET() {
 
   const toHHMM = (dt: Date | null) => {
     if (!dt) return null;
-    return `${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+    const jst = new Date(dt.getTime() + 9 * 60 * 60 * 1000);
+    return `${String(jst.getUTCHours()).padStart(2, "0")}:${String(jst.getUTCMinutes()).padStart(2, "0")}`;
   };
 
   // 2) 自分の担当プロジェクト（アサイン）

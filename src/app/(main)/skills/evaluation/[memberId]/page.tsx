@@ -46,7 +46,7 @@ const LEVEL_COLORS: Record<number, string> = {
   5: "bg-purple-100 text-purple-700 border-purple-300",
 };
 
-const today = new Date().toISOString().slice(0, 10);
+const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
 
 // ─── ページ ───────────────────────────────────────────────
 
