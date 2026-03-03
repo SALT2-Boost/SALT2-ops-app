@@ -79,9 +79,12 @@ function formatCurrency(v: number) {
 // ─── ページ ───────────────────────────────────────────────
 
 export default function DashboardPage() {
-  const { role } = useAuth();
+  const { role, isLoading: authLoading } = useAuth();
   const router = useRouter();
-  const { data, isLoading } = useSWR<DashboardData>(`/api/dashboard?lite=${role === "member" ? "1" : "0"}`);
+  // authLoading 中は null キーでフェッチを保留し、role 確定後に正しいキーでフェッチする
+  const { data, isLoading } = useSWR<DashboardData>(
+    authLoading ? null : `/api/dashboard?lite=${role === "member" ? "1" : "0"}`
+  );
 
   useEffect(() => {
     if (role === "member") {
