@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
 import { updateProfileSchema } from "@/lib/validations/member";
+import { sendEmail } from "@/lib/email";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -53,6 +54,8 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
   const { email, phone, address, bankName, bankBranch, bankAccountNumber, bankAccountHolder } = parsed.data;
 
+  const emailChanged = email !== undefined && email !== member.email;
+
   const updated = await prisma.member.update({
     where: { id },
     data: {
@@ -76,6 +79,22 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       bankAccountHolder: true,
     },
   });
+
+  // メール変更時の通知（SMTP未設定ならスキップ）
+  if (emailChanged && updated.email) {
+    await sendEmail({
+      to: updated.email,
+      subject: "【SALT2 OPS】メールアドレスを更新しました",
+      text: [
+        `${updated.name} さん`,
+        "",
+        "SALT2 OPS でアカウントのメールアドレスが更新されました。",
+        `新しいメールアドレス: ${updated.email}`,
+        "",
+        "もし心当たりがない場合は管理者までご連絡ください。",
+      ].join("\n"),
+    }).catch(() => { /* 送信失敗は握りつぶす（ログ不要） */ });
+  }
 
   return NextResponse.json(updated);
 }
