@@ -52,8 +52,8 @@ export default function AttendancePage() {
   const isAdmin = role === "admin" || role === "manager";
 
   const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
-  const todayLabel = today.toLocaleDateString("ja-JP", { year: "numeric", month: "long", day: "numeric", weekday: "long" });
+  const todayStr = today.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" }); // JST 基準 YYYY-MM-DD
+  const todayLabel = today.toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "long", day: "numeric", weekday: "long" });
 
   const [myRecord, setMyRecord] = useState<TodayRecord | null>(null);
   const [myStatus, setMyStatus] = useState<AttendanceStatus>("not_started");

@@ -13,8 +13,10 @@ export async function GET() {
   if (!user) return unauthorized();
 
   const now = new Date();
-  const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-  const today = new Date(dateStr); // UTC midnight — clock-in と同じ形式
+  // JST 基準で「今日」の日付を求める（UTC との差分 +9h で UTC 日付コンポーネントを使用）
+  const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const dateStr = `${jstNow.getUTCFullYear()}-${String(jstNow.getUTCMonth() + 1).padStart(2, "0")}-${String(jstNow.getUTCDate()).padStart(2, "0")}`;
+  const today = new Date(`${dateStr}T00:00:00Z`); // UTC midnight — clock-in と同じ形式
 
   let attendance = await prisma.attendance.findUnique({
     where: { memberId_date: { memberId: user.memberId, date: today } },
@@ -50,10 +52,10 @@ export async function GET() {
     id: attendance.id,
     date: attendance.date.toISOString().slice(0, 10), // 日またぎ時は昨日の日付を返す
     clockIn: attendance.clockIn
-      ? `${String(attendance.clockIn.getHours()).padStart(2, "0")}:${String(attendance.clockIn.getMinutes()).padStart(2, "0")}`
+      ? (() => { const jst = new Date(attendance.clockIn.getTime() + 9 * 60 * 60 * 1000); return `${String(jst.getUTCHours()).padStart(2, "0")}:${String(jst.getUTCMinutes()).padStart(2, "0")}`; })()
       : null,
     clockOut: attendance.clockOut
-      ? `${String(attendance.clockOut.getHours()).padStart(2, "0")}:${String(attendance.clockOut.getMinutes()).padStart(2, "0")}`
+      ? (() => { const jst = new Date(attendance.clockOut.getTime() + 9 * 60 * 60 * 1000); return `${String(jst.getUTCHours()).padStart(2, "0")}:${String(jst.getUTCMinutes()).padStart(2, "0")}`; })()
       : null,
     breakMinutes: attendance.breakMinutes,
     todoToday: attendance.todoToday,

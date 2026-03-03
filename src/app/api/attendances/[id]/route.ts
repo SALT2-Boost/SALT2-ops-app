@@ -68,13 +68,14 @@ export async function PUT(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: { code: "BAD_REQUEST", message: "リクエストボディが不正です" } }, { status: 400 });
   }
 
-  // "HH:MM" を attendance.date ベースの Date に変換
+  // "HH:MM"（JST）を attendance.date ベースの UTC Date に変換
   function parseTimeOnDate(baseDate: Date, timeStr: string | null): Date | null {
     if (!timeStr || !/^\d{2}:\d{2}$/.test(timeStr)) return null;
     const [h, m] = timeStr.split(":").map(Number);
-    const d = new Date(baseDate);
-    d.setHours(h, m, 0, 0);
-    return d;
+    // baseDate は UTC midnight。JST midnight = baseDate - 9h
+    // ユーザー入力 h:m は JST なので UTC に変換: jstMidnight + h:m
+    const jstMidnightMs = baseDate.getTime() - 9 * 60 * 60 * 1000;
+    return new Date(jstMidnightMs + h * 60 * 60 * 1000 + m * 60 * 1000);
   }
 
   const newClockIn = body.clockIn !== undefined
@@ -112,7 +113,8 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
   function toTimeStr(dt: Date | null): string | null {
     if (!dt) return null;
-    return `${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+    const jst = new Date(dt.getTime() + 9 * 60 * 60 * 1000);
+    return `${String(jst.getUTCHours()).padStart(2, "0")}:${String(jst.getUTCMinutes()).padStart(2, "0")}`;
   }
 
   const actualHours = updated.workMinutes != null
