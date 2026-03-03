@@ -367,12 +367,15 @@ function MonthView({ grid, visible, calData }: {
 // ─── ページ ───────────────────────────────────────────────
 
 export default function CalendarPage() {
-  const { memberId: myMemberId } = useAuth();
+  const { memberId: myMemberId, role } = useAuth();
+  const isAdmin = role === "admin" || role === "manager";
   const [view,          setView]          = useState<ViewMode>("week");
   const [anchor,        setAnchor]        = useState(() => new Date());
   const [displayYear,   setDisplayYear]   = useState(() => new Date().getFullYear());
   const [displayMonth,  setDisplayMonth]  = useState(() => new Date().getMonth() + 1);
-  const [selectedIds,   setSelectedIds]   = useState<Set<string>>(new Set(myMemberId ? [myMemberId] : []));
+  const [selectedIds,   setSelectedIds]   = useState<Set<string>>(
+    () => (isAdmin ? new Set() : new Set(myMemberId ? [myMemberId] : []))
+  );
   const [selectedProjId, setSelectedProjId] = useState<string>("");
   const [calData,       setCalData]       = useState<CalData>({ members: [], schedules: [], attendances: [], projects: [] });
   const [loading,       setLoading]       = useState(true);
@@ -386,7 +389,7 @@ export default function CalendarPage() {
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const memberIdsParam = Array.from(selectedIds).join(",");
+    const memberIdsParam = selectedIds.size > 0 ? Array.from(selectedIds).join(",") : "";
     const res = await fetch(`/api/calendar?from=${from}&to=${to}${memberIdsParam ? `&memberIds=${memberIdsParam}` : ""}`);
     if (res.ok) {
       const data: CalData = await res.json();
@@ -394,7 +397,7 @@ export default function CalendarPage() {
       if (!initialized.current && data.members.length > 0) {
         // 初回は現在選択が空なら取得した先頭を選択
         if (selectedIds.size === 0) {
-          setSelectedIds(new Set([data.members[0].id]));
+          setSelectedIds(new Set(isAdmin ? data.members.map(m => m.id) : [data.members[0].id]));
         }
         initialized.current = true;
       }
@@ -424,7 +427,7 @@ export default function CalendarPage() {
       const projMembers = calData.members.filter(m => m.projectIds.includes(projId));
       setSelectedIds(new Set(projMembers.map(m => m.id)));
     } else {
-      setSelectedIds(new Set(calData.members.map(m => m.id)));
+      setSelectedIds(new Set(isAdmin ? calData.members.map(m => m.id) : (myMemberId ? [myMemberId] : [])));
     }
   }
 
