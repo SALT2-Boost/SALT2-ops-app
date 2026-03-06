@@ -1,0 +1,94 @@
+import { NextResponse } from "next/server";
+import { getSessionUser } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+
+export async function GET() {
+  const user = await getSessionUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // メンバー詳細とプロジェクトアサインを並列取得
+  const [member, assignments] = await Promise.all([
+    prisma.member.findFirst({
+      where: { id: user.memberId, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        address: true,
+        bankName: true,
+        bankBranch: true,
+        bankAccountNumber: true,
+        bankAccountHolder: true,
+        status: true,
+        salaryType: true,
+        salaryAmount: true,
+        joinedAt: true,
+        userAccount: { select: { email: true, role: true } },
+        skills: {
+          select: {
+            id: true,
+            skillId: true,
+            level: true,
+            evaluatedAt: true,
+            memo: true,
+            skill: { select: { name: true, category: { select: { name: true } } } },
+          },
+          orderBy: { evaluatedAt: "desc" },
+        },
+      },
+    }),
+    prisma.projectAssignment.findMany({
+      where: {
+        memberId: user.memberId,
+        project: { deletedAt: null, status: { not: "completed" } },
+      },
+      select: {
+        projectId: true,
+        workloadHours: true,
+        project: { select: { name: true } },
+        position: { select: { positionName: true } },
+      },
+      take: 10,
+    }),
+  ]);
+
+  if (!member) return NextResponse.json({ error: "Not Found" }, { status: 404 });
+
+  // skillId ごとに最新1件のみ
+  const latestSkillMap: Record<string, typeof member.skills[0]> = {};
+  for (const s of member.skills) {
+    if (!latestSkillMap[s.skillId]) latestSkillMap[s.skillId] = s;
+  }
+
+  return NextResponse.json({
+    id: member.id,
+    name: member.name,
+    phone: member.phone,
+    address: member.address,
+    bankName: member.bankName,
+    bankBranch: member.bankBranch,
+    bankAccountNumber: member.bankAccountNumber,
+    bankAccountHolder: member.bankAccountHolder,
+    status: member.status,
+    salaryType: member.salaryType,
+    salaryAmount: member.salaryAmount,
+    joinedAt: member.joinedAt,
+    email: member.userAccount?.email ?? "",
+    role: member.userAccount?.role ?? "",
+    skills: Object.values(latestSkillMap).map((s) => ({
+      id: s.id,
+      skillId: s.skillId,
+      skillName: s.skill.name,
+      categoryName: s.skill.category.name,
+      level: s.level,
+      evaluatedAt: s.evaluatedAt,
+      memo: s.memo,
+    })),
+    projects: assignments.map((a) => ({
+      projectId: a.projectId,
+      projectName: a.project.name,
+      role: a.position.positionName,
+      workloadHours: a.workloadHours,
+    })),
+  });
+}

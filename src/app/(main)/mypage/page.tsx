@@ -317,6 +317,7 @@ export default function MyPage() {
   const [notifySlack, setNotifySlack] = useState(true);
   const [notifyEmail, setNotifyEmail] = useState(false);
   const [evaluations, setEvaluations] = useState<EvalRecord[]>([]);
+  const [evalsLoading, setEvalsLoading] = useState(true);
   const [attendances, setAttendances] = useState<AttRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [attMonth, setAttMonth] = useState(MONTHS[0]);
@@ -354,40 +355,52 @@ export default function MyPage() {
   useEffect(() => {
     if (!memberId) return;
 
-    // 第一段階: 必須データのみ先に取得して表示を早める
+    // 第一段階: メンバー詳細＋プロジェクト＋自己申告を並行取得して表示を早める
     Promise.all([
-      fetch(`/api/members/${memberId}`).then((r) => r.ok ? r.json() : null),
-    ]).then(([detail]) => {
-      setMemberDetail(detail);
+      fetch("/api/mypage").then((r) => r.ok ? r.json() : null),
+      fetch(`/api/self-reports?month=${MONTHS[0]}`).then((r) => r.ok ? r.json() : []),
+    ]).then(([data, reports]) => {
+      const projects: MyProject[] = data?.projects ?? [];
+      if (data) {
+        setMemberDetail({
+          id: data.id,
+          name: data.name,
+          phone: data.phone,
+          address: data.address,
+          bankName: data.bankName,
+          bankBranch: data.bankBranch,
+          bankAccountNumber: data.bankAccountNumber,
+          bankAccountHolder: data.bankAccountHolder,
+          status: data.status,
+          salaryType: data.salaryType,
+          salaryAmount: data.salaryAmount,
+          joinedAt: data.joinedAt,
+          email: data.email,
+          role: data.role,
+          skills: data.skills,
+        });
+        setMyProjects(projects);
+      }
+      if (Array.isArray(reports)) {
+        setSelfReports(reports);
+        setReportSubmitted(reports.length > 0 && reports.every((r: SelfReport) => r.submittedAt));
+        setReportAllocations(
+          projects.map((p) => {
+            const found = reports.find((r: SelfReport) => r.projectId === p.projectId);
+            return { projectId: p.projectId, projectName: p.projectName, reportedHours: found?.reportedHours ?? 0 };
+          })
+        );
+      }
       setLoading(false);
     });
 
-    // 第二段階: 重めのデータは非同期で取得し、揃い次第それぞれ更新
-    fetch("/api/dashboard")
-      .then((r) => r.ok ? r.json() : null)
-      .then((dash) => {
-        const projects: MyProject[] = dash?.myProjects ?? [];
-        setMyProjects(projects);
-        // 既存の自己申告データと合算しておくため、後続の self-reports 取得完了後に再計算する
-      });
-
-    fetch(`/api/self-reports?month=${MONTHS[0]}`)
-      .then((r) => r.ok ? r.json() : [])
-      .then((reports: SelfReport[]) => {
-        setSelfReports(reports ?? []);
-        setReportSubmitted(reports.length > 0 && reports.every((r) => r.submittedAt));
-        setReportAllocations((prev) => {
-          // dashboard取得済みのプロジェクトに対応する配分を上書き
-          return (prev.length ? prev : myProjects).map((p) => {
-            const found = reports.find((r) => r.projectId === p.projectId);
-            return { projectId: p.projectId, projectName: p.projectName, reportedHours: found?.reportedHours ?? 0 };
-          });
-        });
-      });
-
+    // 第二段階: 評価・勤怠を並行取得
     fetch(`/api/evaluations/${memberId}?limit=6`)
       .then((r) => r.ok ? r.json() : [])
-      .then((evals) => setEvaluations(Array.isArray(evals) ? evals : []));
+      .then((evals) => {
+        setEvaluations(Array.isArray(evals) ? evals : []);
+        setEvalsLoading(false);
+      });
 
     fetch(`/api/attendances?month=${MONTHS[0]}`)
       .then((r) => r.ok ? r.json() : [])
@@ -687,7 +700,9 @@ export default function MyPage() {
             人事評価（PAS）
           </CardTitle>
         </CardHeader>
-        {evaluations.length === 0 ? (
+        {evalsLoading ? (
+          <p className="text-sm text-slate-400">読み込み中...</p>
+        ) : evaluations.length === 0 ? (
           <p className="text-sm text-slate-500">人事評価の記録がまだありません。</p>
         ) : (
           <>
