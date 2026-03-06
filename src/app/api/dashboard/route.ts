@@ -123,6 +123,7 @@ export async function GET(req: Request) {
           boostGrossProfit: boostAgg!._sum.grossProfit ?? 0,
           salt2GrossProfit: salt2Agg!._sum.grossProfit ?? 0,
         };
+      }
     }
   }
 
