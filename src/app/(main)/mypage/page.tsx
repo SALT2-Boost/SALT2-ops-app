@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, memo } from "react";
+import { useState, useEffect, memo } from "react";
 import useSWR from "swr";
 import {
   User, Mail, Phone, Calendar, Bell, Shield, ClipboardList, CheckCircle,
@@ -357,9 +357,7 @@ const TodayAttendanceCard = memo(function TodayAttendanceCard() {
 // ─── 勤怠記録セクション（state独立・再レンダー隔離） ─────────
 
 const AttendanceSection = memo(function AttendanceSection() {
-  const [attendances, setAttendances] = useState<AttRecord[]>([]);
   const [attMonth, setAttMonth] = useState(MONTHS[0]);
-  const [attLoading, setAttLoading] = useState(false);
   const [correctionTarget, setCorrectionTarget] = useState<AttRecord | null>(null);
   const [corrForm, setCorrForm] = useState({ clockIn: "", clockOut: "", breakMinutes: "0" });
   const [correcting, setCorrecting] = useState(false);
@@ -368,17 +366,10 @@ const AttendanceSection = memo(function AttendanceSection() {
     open: false, date: "", clockIn: "", clockOut: "", breakMinutes: "0", submitting: false, error: "",
   });
 
-  const loadAttendances = useCallback(async (month: string) => {
-    setAttLoading(true);
-    const res = await fetch(`/api/attendances?month=${month}`);
-    const data = res.ok ? await res.json() : [];
-    setAttendances(Array.isArray(data) ? data : []);
-    setAttLoading(false);
-  }, []);
-
-  useEffect(() => {
-    loadAttendances(attMonth);
-  }, [attMonth, loadAttendances]);
+  const { data: attendancesData, isLoading: attLoading, mutate: mutateAttendances } = useSWR<AttRecord[]>(
+    `/api/attendances?month=${attMonth}`
+  );
+  const attendances = attendancesData ?? [];
 
   function openCorrection(a: AttRecord) {
     setCorrectionTarget(a);
@@ -399,7 +390,7 @@ const AttendanceSection = memo(function AttendanceSection() {
     });
     if (res.ok) {
       setCorrectionTarget(null);
-      await loadAttendances(attMonth);
+      await mutateAttendances();
       setCorrToast("修正申請を送信しました。管理者の承認をお待ちください。");
       setTimeout(() => setCorrToast(null), 4000);
     } else {
@@ -429,7 +420,7 @@ const AttendanceSection = memo(function AttendanceSection() {
     });
     if (res.ok) {
       setNewForm({ open: false, date: "", clockIn: "", clockOut: "", breakMinutes: "0", submitting: false, error: "" });
-      await loadAttendances(attMonth);
+      await mutateAttendances();
       setCorrToast("新規勤怠を申請しました。承認をお待ちください。");
       setTimeout(() => setCorrToast(null), 4000);
     } else {
@@ -866,7 +857,6 @@ const SelfReportSection = memo(function SelfReportSection({ myProjects }: { myPr
 
 export default function MyPage() {
   const { memberId, role } = useAuth();
-  const [deferLowerSections, setDeferLowerSections] = useState(false);
   const [editingProfile, setEditingProfile] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
 
@@ -878,10 +868,10 @@ export default function MyPage() {
     memberId ? `/api/evaluations/${memberId}?limit=6` : null
   );
 
-  useEffect(() => {
-    const t = setTimeout(() => setDeferLowerSections(true), 0);
-    return () => clearTimeout(t);
-  }, []);
+  // Prefetch: mypageLoading待ちを回避して即座にフェッチ開始
+  useSWR<TodayAttendance | null>("/api/attendances/today");
+  useSWR<SelfReport[]>(memberId ? `/api/self-reports?month=${MONTHS[0]}` : null);
+  useSWR<AttRecord[]>(memberId ? `/api/attendances?month=${MONTHS[0]}` : null);
 
   const evaluations = Array.isArray(evalData) ? evalData : [];
   const evaluationComments = evaluations.filter((ev) => ev.comment).slice(0, 3);
@@ -1101,10 +1091,10 @@ export default function MyPage() {
       </Card>
 
       {/* ─── 自己申告・プロジェクト・通知設定（state独立） ─── */}
-      {deferLowerSections && <SelfReportSection myProjects={myProjects} />}
+      <SelfReportSection myProjects={myProjects} />
 
       {/* ─── 勤怠記録（state独立） ─── */}
-      {deferLowerSections && <AttendanceSection />}
+      <AttendanceSection />
 
       {/* ─── セキュリティ ─── */}
       <Card>
