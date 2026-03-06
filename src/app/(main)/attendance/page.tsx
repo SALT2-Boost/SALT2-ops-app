@@ -212,19 +212,13 @@ export default function AttendancePage() {
           {/* 出勤中 */}
           {myStatus === "working" && (
             <div className="space-y-3">
-              <Button variant="danger" size="lg" className="w-full" onClick={clockOut}>
-                退勤する
-              </Button>
-              <div>
-                <label className="text-sm font-medium text-slate-700">休憩時間（分）</label>
-                <input
-                  type="number"
-                  value={breakMinutes}
-                  onChange={(e) => setBreakMinutes(e.target.value)}
-                  min={0}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                />
-              </div>
+              {/* 今日やる予定（参照用） */}
+              {myRecord?.todoToday && (
+                <div className="rounded-md bg-blue-50 px-3 py-2">
+                  <p className="text-xs font-medium text-blue-600 mb-1">今日の予定（出勤時に入力）</p>
+                  <p className="text-sm text-slate-700 whitespace-pre-wrap">{myRecord.todoToday}</p>
+                </div>
+              )}
               <div>
                 <label className="text-sm font-medium text-slate-700">今日やったこと <span className="text-red-500">*</span></label>
                 <textarea
@@ -247,6 +241,30 @@ export default function AttendancePage() {
                   className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
                 />
               </div>
+              <div>
+                <label className="text-sm font-medium text-slate-700">休憩時間（分）</label>
+                <input
+                  type="number"
+                  value={breakMinutes}
+                  onChange={(e) => setBreakMinutes(e.target.value)}
+                  min={0}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              {clockInError && <p className="text-xs text-red-600">{clockInError}</p>}
+              <Button
+                variant="danger"
+                size="lg"
+                className="w-full"
+                onClick={() => {
+                  if (!todayDone.trim()) { setClockInError("今日やったことを入力してください"); return; }
+                  if (!tomorrowPlan.trim()) { setClockInError("次回勤務日にやることを入力してください"); return; }
+                  setClockInError("");
+                  clockOut();
+                }}
+              >
+                退勤する
+              </Button>
             </div>
           )}
 
