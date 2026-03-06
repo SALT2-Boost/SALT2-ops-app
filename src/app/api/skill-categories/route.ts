@@ -33,7 +33,8 @@ export async function GET(_req: NextRequest) {
         description: s.description,
         displayOrder: s.displayOrder,
       })),
-    }))
+    })),
+    { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" } }
   );
 }
 

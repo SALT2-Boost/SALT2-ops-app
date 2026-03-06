@@ -75,7 +75,8 @@ export async function GET(req: NextRequest) {
             reportedHours: Number(r.reportedHours),
           })),
         };
-      })
+      }),
+      { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=120" } }
     );
   }
 
@@ -99,7 +100,8 @@ export async function GET(req: NextRequest) {
       projectName: r.project.name,
       reportedHours: Number(r.reportedHours),
       submittedAt: r.submittedAt,
-    }))
+    })),
+    { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=120" } }
   );
 }
 

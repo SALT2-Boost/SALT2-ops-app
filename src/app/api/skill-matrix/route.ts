@@ -14,25 +14,21 @@ export async function GET(req: NextRequest) {
   const categoryId = searchParams.get("categoryId") ?? "";
   const minLevel = Number(searchParams.get("minLevel") ?? "0");
 
-  // カテゴリ（フィルタ対応）
-  const categories = await prisma.skillCategory.findMany({
-    where: categoryId ? { id: categoryId } : undefined,
-    include: { skills: { orderBy: { displayOrder: "asc" } } },
-    orderBy: { displayOrder: "asc" },
-  });
+  // カテゴリとメンバーを並列取得
+  const [categories, members] = await Promise.all([
+    prisma.skillCategory.findMany({
+      where: categoryId ? { id: categoryId } : undefined,
+      include: { skills: { orderBy: { displayOrder: "asc" } } },
+      orderBy: { displayOrder: "asc" },
+    }),
+    prisma.member.findMany({
+      where: { deletedAt: null },
+      include: { userAccount: { select: { role: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
+  ]);
 
   const skillIds = categories.flatMap((c) => c.skills.map((s) => s.id));
-
-  // メンバー一覧
-  const members = await prisma.member.findMany({
-    where: {
-      deletedAt: null,
-    },
-    include: {
-      userAccount: { select: { role: true } },
-    },
-    orderBy: { createdAt: "asc" },
-  });
 
   // 評価履歴から memberId+skillId ごとの最新1件だけ取得
   const memberIds = members.map((m) => m.id);
@@ -84,5 +80,5 @@ export async function GET(req: NextRequest) {
       role: m.userAccount?.role ?? "",
     })),
     levelMap,
-  });
+  }, { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" } });
 }

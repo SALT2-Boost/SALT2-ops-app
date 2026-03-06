@@ -223,6 +223,7 @@ export async function GET(req: NextRequest) {
       sentAt: c.sentAt?.toISOString() ?? null,
       completedAt: c.completedAt?.toISOString() ?? null,
       createdAt: c.createdAt.toISOString(),
-    }))
+    })),
+    { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" } }
   );
 }

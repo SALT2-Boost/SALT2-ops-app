@@ -84,6 +84,11 @@ interface MyPageResponse extends MemberDetail {
   projects: MyProject[];
 }
 
+interface MyPageSummaryResponse {
+  member: MyPageResponse;
+  evaluations: EvalRecord[];
+}
+
 interface AttRecord {
   id: string;
   date: string;
@@ -860,27 +865,23 @@ export default function MyPage() {
   const [editingProfile, setEditingProfile] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
 
-  const { data: mypageData, isLoading: mypageLoading, mutate: mutateMypage } = useSWR<MyPageResponse | null>(
-    memberId ? "/api/mypage" : null
+  const { data: summaryData, isLoading: mypageLoading, mutate: mutateMypage } = useSWR<MyPageSummaryResponse | null>(
+    memberId ? "/api/mypage-summary" : null
   );
 
-  const { data: evalData, isLoading: evalsLoading } = useSWR<EvalRecord[]>(
-    memberId ? `/api/evaluations/${memberId}?limit=6` : null
-  );
-
-  // Prefetch: mypageLoading待ちを回避して即座にフェッチ開始
+  // Prefetch: 月別データをサブコンポーネントのために先行取得
   useSWR<TodayAttendance | null>("/api/attendances/today");
   useSWR<SelfReport[]>(memberId ? `/api/self-reports?month=${MONTHS[0]}` : null);
   useSWR<AttRecord[]>(memberId ? `/api/attendances?month=${MONTHS[0]}` : null);
 
-  const evaluations = Array.isArray(evalData) ? evalData : [];
+  const evaluations = summaryData?.evaluations ?? [];
   const evaluationComments = evaluations.filter((ev) => ev.comment).slice(0, 3);
 
   if (mypageLoading) return <div className="py-8 text-center text-sm text-slate-400">読み込み中...</div>;
-  const memberDetail = mypageData;
+  const memberDetail = summaryData?.member ?? null;
   if (!memberDetail) return null;
 
-  const myProjects = mypageData?.projects ?? [];
+  const myProjects = memberDetail.projects ?? [];
   const hasBankInfo = memberDetail.bankName || memberDetail.bankAccountNumber;
 
   return (
@@ -1036,9 +1037,7 @@ export default function MyPage() {
             人事評価（PAS）
           </CardTitle>
         </CardHeader>
-        {evalsLoading ? (
-          <p className="text-sm text-slate-400">読み込み中...</p>
-        ) : evaluations.length === 0 ? (
+        {evaluations.length === 0 ? (
           <p className="text-sm text-slate-500">人事評価の記録がまだありません。</p>
         ) : (
           <>
@@ -1124,7 +1123,7 @@ export default function MyPage() {
           current={memberDetail}
           onClose={() => setEditingProfile(false)}
           onSaved={(updated) => {
-            mutateMypage((prev) => (prev ? { ...prev, ...updated } : prev), false);
+            mutateMypage((prev) => prev ? { ...prev, member: { ...prev.member, ...updated } } : prev, false);
           }}
         />
       )}

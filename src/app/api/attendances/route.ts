@@ -92,7 +92,8 @@ export async function GET(req: NextRequest) {
         todoTomorrow: r.todoTomorrow,
         isModified: r.status === "modified",
       };
-    })
+    }),
+    { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=120" } }
   );
 }
 

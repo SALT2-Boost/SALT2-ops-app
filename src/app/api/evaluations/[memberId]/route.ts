@@ -54,6 +54,7 @@ export async function GET(
         comment: ev.comment,
         updatedAt: ev.updatedAt,
       };
-    })
+    }),
+    { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" } }
   );
 }

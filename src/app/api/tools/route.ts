@@ -43,7 +43,8 @@ export async function GET(req: NextRequest) {
       companyLabel: t.companyLabel,
       note: t.note,
       updatedAt: t.updatedAt,
-    }))
+    })),
+    { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" } }
   );
 }
 
