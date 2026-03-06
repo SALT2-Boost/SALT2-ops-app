@@ -105,7 +105,7 @@ export default function MembersPage() {
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {members.map((member) => (
-              <Link key={member.id} href={`/members/${member.id}`}>
+              <Link key={member.id} href={`/members/${member.id}`} prefetch={false}>
                 <Card className="cursor-pointer transition-shadow hover:shadow-md">
                   <div className="flex items-start gap-3">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600">

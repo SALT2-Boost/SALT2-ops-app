@@ -119,10 +119,6 @@ function AdminClosingView() {
   const { data: invoices = [], isLoading: invoicesLoading, mutate: mutateInvoices } = useSWR<Invoice[]>(`/api/invoices?month=${targetMonth}`);
   const loading = closingLoading || invoicesLoading;
 
-  async function reloadData() {
-    await Promise.all([mutateClosing(), mutateInvoices()]);
-  }
-
   function showToast(msg: string) {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 3000);
@@ -140,7 +136,7 @@ function AdminClosingView() {
     setAggregateWarning(false);
     setAggregating(true);
     try {
-      await reloadData();
+      await Promise.all([mutateClosing(), mutateInvoices()]);
       showToast("集計を最新の状態に更新しました");
     } finally {
       setAggregating(false);
@@ -158,7 +154,7 @@ function AdminClosingView() {
       if (res.ok) {
         const memberName = records.find((r) => r.memberId === memberId)?.memberName ?? "";
         showToast(`${memberName} さんにSlack確認依頼を送信しました`);
-        await reloadData();
+        await mutateClosing(); // confirmStatus のみ変わるため invoices は不要
       }
     } finally {
       setSendingSlackId(null);
@@ -179,7 +175,7 @@ function AdminClosingView() {
         )
       );
       showToast("未送信メンバー全員にSlack確認依頼を送信しました");
-      await reloadData();
+      await mutateClosing(); // confirmStatus のみ変わるため invoices は不要
     } finally {
       setSendingAll(false);
     }
@@ -195,7 +191,7 @@ function AdminClosingView() {
       });
       if (res.ok) {
         showToast("強制確定しました");
-        await reloadData();
+        await mutateClosing(); // confirmStatus のみ変わるため invoices は不要
       }
     } finally {
       setForcingId(null);
@@ -210,7 +206,7 @@ function AdminClosingView() {
       });
       if (res.ok) {
         showToast(`${memberName} さんの請求書を LayerX へ送付しました`);
-        await reloadData();
+        await Promise.all([mutateClosing(), mutateInvoices()]); // invoiceStatus が変わるため両方更新
       }
     } finally {
       setAccountingId(null);
@@ -719,10 +715,10 @@ function MemberBillingView({ memberId }: { memberId: string }) {
 
   const { data: closingData, isLoading: closingLoading } = useSWR<ClosingRecord[]>(`/api/closing?month=${month}`);
   const { data: invoiceData, isLoading: invoiceLoading, mutate: mutateInvoice } = useSWR<Invoice | null>(`/api/invoices?month=${month}&mine=1`);
-  const { data: dashData } = useSWR<{ myProjects?: MyProject[] }>("/api/dashboard");
+  const { data: mypageData } = useSWR<{ projects?: MyProject[] }>("/api/mypage");
   const loading = closingLoading || invoiceLoading;
 
-  const myProjects: MyProject[] = dashData?.myProjects ?? [];
+  const myProjects: MyProject[] = mypageData?.projects ?? [];
 
   // Initialize derived state when SWR data loads
   useEffect(() => {
