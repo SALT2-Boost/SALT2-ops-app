@@ -124,7 +124,6 @@ export default function SchedulePage() {
       })
     );
     setLoaded(true);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existingSchedules]);
 
   function update(i: number, key: keyof DayEntry, value: string | boolean) {

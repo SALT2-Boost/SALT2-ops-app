@@ -47,22 +47,6 @@ export default function WorkloadPage() {
   async function saveAll() {
     if (!data) return;
     setSaving(true);
-    const patches: Promise<Response>[] = [];
-    for (const [memberId, projs] of Object.entries(cells)) {
-      for (const [, cell] of Object.entries(projs)) {
-        const orig = data.matrix[memberId]?.[Object.keys(projs).find((pid) => projs[pid] === cell) ?? ""];
-        if (orig && orig.hours !== cell.hours) {
-          patches.push(
-            fetch(`/api/projects/${Object.keys(projs).find((pid) => projs[pid] === cell)}/assignments/${cell.assignId}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ workloadHours: cell.hours }),
-            })
-          );
-        }
-      }
-    }
-    // simpler: patch all changed cells
     const allPatches: Promise<Response>[] = [];
     for (const [memberId, projs] of Object.entries(cells)) {
       for (const [projectId, cell] of Object.entries(projs)) {

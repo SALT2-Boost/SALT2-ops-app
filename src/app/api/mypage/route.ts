@@ -34,6 +34,7 @@ export async function GET() {
             skill: { select: { name: true, category: { select: { name: true } } } },
           },
           orderBy: { evaluatedAt: "desc" },
+          distinct: ["skillId"],
         },
       },
     }),
@@ -54,12 +55,6 @@ export async function GET() {
 
   if (!member) return NextResponse.json({ error: "Not Found" }, { status: 404 });
 
-  // skillId ごとに最新1件のみ
-  const latestSkillMap: Record<string, typeof member.skills[0]> = {};
-  for (const s of member.skills) {
-    if (!latestSkillMap[s.skillId]) latestSkillMap[s.skillId] = s;
-  }
-
   return NextResponse.json({
     id: member.id,
     name: member.name,
@@ -75,7 +70,7 @@ export async function GET() {
     joinedAt: member.joinedAt,
     email: member.userAccount?.email ?? "",
     role: member.userAccount?.role ?? "",
-    skills: Object.values(latestSkillMap).map((s) => ({
+    skills: member.skills.map((s) => ({
       id: s.id,
       skillId: s.skillId,
       skillName: s.skill.name,

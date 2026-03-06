@@ -589,6 +589,7 @@ model MonthlySelfReport {
   @@unique([memberId, targetMonth, projectId])
   @@index([memberId, targetMonth])
   @@index([projectId, targetMonth])
+  @@index([targetMonth])
   @@map("monthly_self_reports")
 }
 

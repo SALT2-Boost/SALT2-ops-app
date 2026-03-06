@@ -315,6 +315,8 @@ function WeekView({ weekDays, visible, calData }: {
 
 // ─── MonthView ────────────────────────────────────────────
 
+const MAX_PER_CELL = 3;
+
 function MonthView({ grid, visible, calData }: {
   grid:    ReturnType<typeof buildMonthGrid>;
   visible: CalMember[];
@@ -322,9 +324,21 @@ function MonthView({ grid, visible, calData }: {
 }) {
   const colorMap = new Map(calData.members.map((m, i) => [m.id, COLORS[i % COLORS.length]]));
 
+  const attMap = useMemo(() => {
+    const map = new Map<string, AttEntry>();
+    for (const a of calData.attendances) map.set(`${a.memberId}:${a.date}`, a);
+    return map;
+  }, [calData.attendances]);
+
+  const schedMap = useMemo(() => {
+    const map = new Map<string, SchedEntry>();
+    for (const s of calData.schedules) map.set(`${s.memberId}:${s.date}`, s);
+    return map;
+  }, [calData.schedules]);
+
   function getEvent(memberId: string, date: string) {
-    const a = calData.attendances.find(a => a.memberId === memberId && a.date === date);
-    const s = calData.schedules.find(s => s.memberId === memberId && s.date === date);
+    const a = attMap.get(`${memberId}:${date}`);
+    const s = schedMap.get(`${memberId}:${date}`);
     if (a?.clockIn) return { type: "actual" as const, clockIn: a.clockIn, clockOut: a.clockOut, locationType: a.locationType };
     if (s && !s.isOff && s.startTime) return { type: "schedule" as const, startTime: s.startTime, endTime: s.endTime, locationType: s.locationType };
     return null;
@@ -358,23 +372,35 @@ function MonthView({ grid, visible, calData }: {
                     {day.dayNum}
                   </span>
                   <div className="space-y-0.5">
-                    {visible.map(member => {
-                      const ev    = getEvent(member.id, day.date);
-                      if (!ev) return null;
-                      const color = colorMap.get(member.id) ?? COLORS[0];
+                    {(() => {
+                      const items = visible.flatMap(member => {
+                        const ev = getEvent(member.id, day.date);
+                        return ev ? [{ member, ev }] : [];
+                      });
+                      const overflow = Math.max(0, items.length - MAX_PER_CELL);
                       return (
-                        <div key={member.id}
-                          className={`flex flex-col rounded px-1.5 py-0.5 text-xs truncate border-l-2 ${color.bg} ${color.text} ${color.bl} ${
-                            ev.type === "schedule" ? "opacity-60" : ""
-                          }`}
-                        >
-                          <div className="flex items-center gap-1">
-                            <span className="font-medium truncate">{member.name}</span>
-                          </div>
-                          <LocationBadge locationType={ev.locationType} />
-                        </div>
+                        <>
+                          {items.slice(0, MAX_PER_CELL).map(({ member, ev }) => {
+                            const color = colorMap.get(member.id) ?? COLORS[0];
+                            return (
+                              <div key={member.id}
+                                className={`flex flex-col rounded px-1.5 py-0.5 text-xs truncate border-l-2 ${color.bg} ${color.text} ${color.bl} ${
+                                  ev.type === "schedule" ? "opacity-60" : ""
+                                }`}
+                              >
+                                <div className="flex items-center gap-1">
+                                  <span className="font-medium truncate">{member.name}</span>
+                                </div>
+                                <LocationBadge locationType={ev.locationType} />
+                              </div>
+                            );
+                          })}
+                          {overflow > 0 && (
+                            <span className="pl-1 text-[10px] text-slate-400">+{overflow}</span>
+                          )}
+                        </>
                       );
-                    })}
+                    })()}
                   </div>
                 </div>
               ))}

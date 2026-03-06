@@ -147,8 +147,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
       startDate: toDateInput(project.startDate),
       endDate: toDateInput(project.endDate),
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project]);
+  }, [project, editing]);
 
   // ─── プロジェクト編集 ──────────────────────────────────
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { Star, Settings, ClipboardEdit } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,8 @@ function LevelCell({ level }: { level: number | null }) {
   );
 }
 
+const PAGE_SIZE = 20;
+
 // ─── ページ ───────────────────────────────────────────────
 
 export default function SkillsPage() {
@@ -55,6 +57,7 @@ export default function SkillsPage() {
 
   const [categoryFilter, setCategoryFilter] = useState("");
   const [minLevel, setMinLevel] = useState(0);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   // カテゴリ一覧（フィルタ用）は初回のみ取得
   useEffect(() => {
@@ -71,15 +74,33 @@ export default function SkillsPage() {
     if (minLevel > 0) params.set("minLevel", String(minLevel));
 
     setLoading(true);
+    setVisibleCount(PAGE_SIZE);
     fetch(`/api/skill-matrix?${params}`)
       .then((r) => r.json())
       .then(setData)
       .finally(() => setLoading(false));
   }, [categoryFilter, minLevel]);
 
-  const allSkills = data?.categories.flatMap((c) =>
-    c.skills.map((s) => ({ ...s, categoryId: c.id }))
-  ) ?? [];
+  const allSkills = useMemo(
+    () => data?.categories.flatMap((c) => c.skills.map((s) => ({ ...s, categoryId: c.id }))) ?? [],
+    [data]
+  );
+
+  const skillStats = useMemo(() => {
+    const map = new Map<string, { avg: string; maxLevel: number }>();
+    for (const cat of data?.categories ?? []) {
+      for (const skill of cat.skills) {
+        const levels = (data?.members ?? [])
+          .map((m) => data?.levelMap[m.id]?.[skill.id] ?? 0)
+          .filter((l) => l > 0);
+        map.set(skill.id, {
+          avg: levels.length > 0 ? (levels.reduce((s, l) => s + l, 0) / levels.length).toFixed(1) : "—",
+          maxLevel: levels.length > 0 ? Math.max(...levels) : 0,
+        });
+      }
+    }
+    return map;
+  }, [data]);
 
   return (
     <div className="space-y-6">
@@ -177,7 +198,7 @@ export default function SkillsPage() {
                 </tr>
               </thead>
               <tbody>
-                {(data?.members ?? []).map((member) => (
+                {(data?.members ?? []).slice(0, visibleCount).map((member) => (
                   <tr key={member.id} className="hover:bg-slate-50">
                     <td className="sticky left-0 z-10 bg-white border border-slate-200 px-4 py-2 font-medium">
                       <div className="flex items-center gap-2">
@@ -209,6 +230,17 @@ export default function SkillsPage() {
                 条件に該当するメンバーがいません
               </div>
             )}
+            {(data?.members.length ?? 0) > visibleCount && (
+              <div className="flex items-center justify-center gap-3 border-t border-slate-100 py-3 text-xs text-slate-500">
+                <span>{visibleCount}/{data!.members.length}名表示中</span>
+                <button
+                  onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
+                  className="rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                >
+                  もっと見る
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Per-skill summary */}
@@ -218,13 +250,8 @@ export default function SkillsPage() {
                 <h3 className="mb-3 text-sm font-semibold text-slate-700">{cat.name}</h3>
                 <div className="space-y-2">
                   {cat.skills.map((skill) => {
-                    const levels = (data?.members ?? [])
-                      .map((m) => data?.levelMap[m.id]?.[skill.id] ?? 0)
-                      .filter((l) => l > 0);
-                    const avg = levels.length > 0
-                      ? (levels.reduce((s, l) => s + l, 0) / levels.length).toFixed(1)
-                      : "—";
-                    const maxLevel = levels.length > 0 ? Math.max(...levels) : 0;
+                    const stats = skillStats.get(skill.id) ?? { avg: "—", maxLevel: 0 };
+                    const { avg, maxLevel } = stats;
                     return (
                       <div key={skill.id} className="flex items-center justify-between">
                         <span className="text-xs text-slate-600">{skill.name}</span>

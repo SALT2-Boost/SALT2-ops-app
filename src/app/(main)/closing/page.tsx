@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo, memo } from "react";
 import useSWR from "swr";
 import {
   AlertTriangle, Send, RefreshCw, CheckCircle, Zap, ChevronRight, AlertCircle, FileText,
@@ -97,6 +97,75 @@ function buildMonthOptions() {
   return opts;
 }
 
+// ─── ClosingTableRow（React.memo で行単位の再レンダー防止） ──
+
+interface ClosingTableRowProps {
+  rec: ClosingRecord;
+  sendingSlackId: string | null;
+  forcingId: string | null;
+  onSendSlack: (memberId: string) => void;
+  onForce: (memberId: string) => void;
+}
+
+const ClosingTableRow = memo(function ClosingTableRow({
+  rec,
+  sendingSlackId,
+  forcingId,
+  onSendSlack,
+  onForce,
+}: ClosingTableRowProps) {
+  const isSending = sendingSlackId === rec.memberId;
+  const isForcing = forcingId === rec.memberId;
+  return (
+    <tr className="border-b border-slate-50 hover:bg-slate-50">
+      <td className="px-4 py-3 font-medium text-slate-800">{rec.memberName}</td>
+      <td className="px-4 py-3 text-slate-500 text-xs">{rec.contractType}</td>
+      <td className="px-4 py-3 text-right text-slate-600">{rec.workDays}日</td>
+      <td className="px-4 py-3 text-right text-slate-600">{rec.totalHours}h</td>
+      <td className={`px-4 py-3 text-right font-medium ${rec.missingDays > 0 ? "text-amber-600" : "text-slate-400"}`}>
+        {rec.missingDays > 0 ? `${rec.missingDays}日` : "—"}
+      </td>
+      <td className="px-4 py-3 text-right font-semibold text-slate-800">
+        {formatCurrency(rec.estimatedAmount)}
+      </td>
+      <td className="px-4 py-3">
+        <Badge variant={confirmVariant[rec.confirmStatus]}>
+          {confirmLabel[rec.confirmStatus]}
+        </Badge>
+      </td>
+      <td className="px-4 py-3">
+        <Badge variant={receiptStatusConfig[rec.invoiceStatus].variant}>
+          {receiptStatusConfig[rec.invoiceStatus].label}
+        </Badge>
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex gap-1.5 flex-wrap">
+          {rec.confirmStatus === "not_sent" && (
+            <Button size="sm" variant="outline" onClick={() => onSendSlack(rec.memberId)} disabled={isSending}>
+              <Send size={12} /> {isSending ? "送信中..." : "Slack通知"}
+            </Button>
+          )}
+          {rec.confirmStatus === "waiting" && (
+            <>
+              <Button size="sm" variant="outline" onClick={() => onSendSlack(rec.memberId)} disabled={isSending}>
+                <RefreshCw size={12} /> {isSending ? "送信中..." : "再通知"}
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => onForce(rec.memberId)} disabled={isForcing}>
+                <Zap size={12} /> {isForcing ? "処理中..." : "強制確定"}
+              </Button>
+            </>
+          )}
+          {(rec.confirmStatus === "confirmed" || rec.confirmStatus === "forced") && (
+            <span className="flex items-center gap-1 text-xs text-green-600">
+              <CheckCircle size={12} /> 確認済み
+            </span>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+});
+
 // ─── Admin View ───────────────────────────────────────────
 
 function AdminClosingView() {
@@ -143,7 +212,7 @@ function AdminClosingView() {
     }
   }
 
-  async function handleSendSlack(memberId: string) {
+  const handleSendSlack = useCallback(async (memberId: string, memberName?: string) => {
     setSendingSlackId(memberId);
     try {
       const res = await fetch(`/api/closing/members/${memberId}/notify`, {
@@ -152,16 +221,17 @@ function AdminClosingView() {
         body: JSON.stringify({ month: targetMonth }),
       });
       if (res.ok) {
-        const memberName = records.find((r) => r.memberId === memberId)?.memberName ?? "";
-        showToast(`${memberName} さんにSlack確認依頼を送信しました`);
+        const name = memberName ?? records.find((r) => r.memberId === memberId)?.memberName ?? "";
+        showToast(`${name} さんにSlack確認依頼を送信しました`);
         await mutateClosing(); // confirmStatus のみ変わるため invoices は不要
       }
     } finally {
       setSendingSlackId(null);
     }
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetMonth, mutateClosing]);
 
-  async function handleSendAll() {
+  const handleSendAll = useCallback(async () => {
     setSendingAll(true);
     try {
       const notSent = records.filter((r) => r.confirmStatus === "not_sent");
@@ -179,9 +249,10 @@ function AdminClosingView() {
     } finally {
       setSendingAll(false);
     }
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [records, targetMonth, mutateClosing]);
 
-  async function handleForce(memberId: string) {
+  const handleForce = useCallback(async (memberId: string) => {
     setForcingId(memberId);
     try {
       const res = await fetch(`/api/closing/members/${memberId}/force-confirm`, {
@@ -196,9 +267,10 @@ function AdminClosingView() {
     } finally {
       setForcingId(null);
     }
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetMonth, mutateClosing]);
 
-  async function handleAccounting(invoiceId: string, memberName: string) {
+  const handleAccounting = useCallback(async (invoiceId: string, memberName: string) => {
     setAccountingId(invoiceId);
     try {
       const res = await fetch(`/api/invoices/${invoiceId}/accounting`, {
@@ -211,24 +283,36 @@ function AdminClosingView() {
     } finally {
       setAccountingId(null);
     }
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mutateClosing, mutateInvoices]);
 
-  const notSentCount = records.filter((r) => r.confirmStatus === "not_sent").length;
-  const waitingCount = records.filter((r) => r.confirmStatus === "waiting").length;
-  const confirmedCount = records.filter((r) => r.confirmStatus === "confirmed" || r.confirmStatus === "forced").length;
-  const totalEstimated = records.reduce((s, r) => s + r.estimatedAmount, 0);
-  const hasMissingDays = records.some((r) => r.missingDays > 0);
-
-  // 請求書受領セクション
-  const hourlyRecords = records.filter((r) => r.salaryType === "hourly");
-  const salaryRecords = records.filter((r) => r.salaryType === "monthly");
-  // 時給制のみで受領・経理処理を判定（月給制は請求書提出不要）
-  const receivedCount = hourlyRecords.filter((r) => r.invoiceStatus === "sent" || r.invoiceStatus === "approved" || r.invoiceStatus === "accounting_sent").length;
-  const hourlyLaborCost = hourlyRecords.reduce((s, r) => s + r.estimatedAmount, 0);
-  const salaryLaborCost = salaryRecords.reduce((s, r) => s + r.salaryAmount, 0);
-  const totalLaborCost = hourlyLaborCost + salaryLaborCost;
-  const hourlyReceived = invoices.filter((i) => i.status === "sent").length;
-  const notReceivedCount = records.length - hourlyReceived;
+  const {
+    notSentCount, waitingCount, confirmedCount, totalEstimated, hasMissingDays,
+    hourlyRecords, salaryRecords, receivedCount, hourlyLaborCost, salaryLaborCost,
+    totalLaborCost, hourlyReceived, notReceivedCount, invoiceMap,
+  } = useMemo(() => {
+    const hourlyRecs = records.filter((r) => r.salaryType === "hourly");
+    const salaryRecs = records.filter((r) => r.salaryType === "monthly");
+    const hourlyLabor = hourlyRecs.reduce((s, r) => s + r.estimatedAmount, 0);
+    const salaryLabor = salaryRecs.reduce((s, r) => s + r.salaryAmount, 0);
+    const invReceived = invoices.filter((i) => i.status === "sent").length;
+    return {
+      notSentCount:   records.filter((r) => r.confirmStatus === "not_sent").length,
+      waitingCount:   records.filter((r) => r.confirmStatus === "waiting").length,
+      confirmedCount: records.filter((r) => r.confirmStatus === "confirmed" || r.confirmStatus === "forced").length,
+      totalEstimated: records.reduce((s, r) => s + r.estimatedAmount, 0),
+      hasMissingDays: records.some((r) => r.missingDays > 0),
+      hourlyRecords:  hourlyRecs,
+      salaryRecords:  salaryRecs,
+      receivedCount:  hourlyRecs.filter((r) => r.invoiceStatus === "sent" || r.invoiceStatus === "approved" || r.invoiceStatus === "accounting_sent").length,
+      hourlyLaborCost: hourlyLabor,
+      salaryLaborCost: salaryLabor,
+      totalLaborCost:  hourlyLabor + salaryLabor,
+      hourlyReceived:  invReceived,
+      notReceivedCount: records.length - invReceived,
+      invoiceMap: new Map(invoices.map((i) => [i.memberId, i])),
+    };
+  }, [records, invoices]);
 
   return (
     <div className="space-y-6">
@@ -316,7 +400,7 @@ function AdminClosingView() {
           <RefreshCw size={15} /> データを更新
         </Button>
         {notSentCount > 0 && (
-          <Button variant="primary" onClick={handleSendAll} disabled={sendingAll}>
+          <Button variant="primary" onClick={() => handleSendAll()} disabled={sendingAll}>
             <Send size={15} /> {sendingAll ? "送信中..." : `未通知 ${notSentCount}名 に一括Slack通知`}
           </Button>
         )}
@@ -344,52 +428,14 @@ function AdminClosingView() {
               </thead>
               <tbody>
                 {records.map((rec) => (
-                  <tr key={rec.memberId} className="border-b border-slate-50 hover:bg-slate-50">
-                    <td className="px-4 py-3 font-medium text-slate-800">{rec.memberName}</td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">{rec.contractType}</td>
-                    <td className="px-4 py-3 text-right text-slate-600">{rec.workDays}日</td>
-                    <td className="px-4 py-3 text-right text-slate-600">{rec.totalHours}h</td>
-                    <td className={`px-4 py-3 text-right font-medium ${rec.missingDays > 0 ? "text-amber-600" : "text-slate-400"}`}>
-                      {rec.missingDays > 0 ? `${rec.missingDays}日` : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right font-semibold text-slate-800">
-                      {formatCurrency(rec.estimatedAmount)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge variant={confirmVariant[rec.confirmStatus]}>
-                        {confirmLabel[rec.confirmStatus]}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge variant={receiptStatusConfig[rec.invoiceStatus].variant}>
-                        {receiptStatusConfig[rec.invoiceStatus].label}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-1.5 flex-wrap">
-                        {rec.confirmStatus === "not_sent" && (
-                          <Button size="sm" variant="outline" onClick={() => handleSendSlack(rec.memberId)} disabled={sendingSlackId === rec.memberId}>
-                            <Send size={12} /> {sendingSlackId === rec.memberId ? "送信中..." : "Slack通知"}
-                          </Button>
-                        )}
-                        {rec.confirmStatus === "waiting" && (
-                          <>
-                            <Button size="sm" variant="outline" onClick={() => handleSendSlack(rec.memberId)} disabled={sendingSlackId === rec.memberId}>
-                              <RefreshCw size={12} /> {sendingSlackId === rec.memberId ? "送信中..." : "再通知"}
-                            </Button>
-                            <Button size="sm" variant="secondary" onClick={() => handleForce(rec.memberId)} disabled={forcingId === rec.memberId}>
-                              <Zap size={12} /> {forcingId === rec.memberId ? "処理中..." : "強制確定"}
-                            </Button>
-                          </>
-                        )}
-                        {(rec.confirmStatus === "confirmed" || rec.confirmStatus === "forced") && (
-                          <span className="flex items-center gap-1 text-xs text-green-600">
-                            <CheckCircle size={12} /> 確認済み
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
+                  <ClosingTableRow
+                    key={rec.memberId}
+                    rec={rec}
+                    sendingSlackId={sendingSlackId}
+                    forcingId={forcingId}
+                    onSendSlack={handleSendSlack}
+                    onForce={handleForce}
+                  />
                 ))}
                 {records.length === 0 && (
                   <tr>
@@ -472,7 +518,7 @@ function AdminClosingView() {
                   </thead>
                   <tbody>
                     {hourlyRecords.map((rec) => {
-                      const inv = invoices.find((i) => i.memberId === rec.memberId);
+                      const inv = invoiceMap.get(rec.memberId);
                       const invStatus = inv?.status ?? "none";
                       const displayStatus = invStatus === "confirmed" ? "accounting_sent" : invStatus === "sent" ? "sent" : inv ? "generated" : "none";
                       const cfg = receiptConfig[displayStatus] ?? receiptConfig["none"];

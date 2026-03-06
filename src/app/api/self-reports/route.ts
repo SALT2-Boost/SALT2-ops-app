@@ -34,7 +34,13 @@ export async function GET(req: NextRequest) {
       }),
       prisma.monthlySelfReport.findMany({
         where: { targetMonth: month },
-        include: { project: { select: { id: true, name: true } } },
+        select: {
+          memberId: true,
+          projectId: true,
+          reportedHours: true,
+          submittedAt: true,
+          project: { select: { name: true } },
+        },
         orderBy: { createdAt: "asc" },
       }),
     ]);
@@ -76,7 +82,13 @@ export async function GET(req: NextRequest) {
   // 一般ユーザー: 自分のみ
   const reports = await prisma.monthlySelfReport.findMany({
     where: { memberId: user.memberId, targetMonth: month },
-    include: { project: { select: { id: true, name: true } } },
+    select: {
+      id: true,
+      projectId: true,
+      reportedHours: true,
+      submittedAt: true,
+      project: { select: { name: true } },
+    },
     orderBy: { createdAt: "asc" },
   });
 

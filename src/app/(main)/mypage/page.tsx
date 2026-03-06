@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, memo } from "react";
 import useSWR from "swr";
 import {
   User, Mail, Phone, Calendar, Bell, Shield, ClipboardList, CheckCircle,
@@ -304,134 +304,81 @@ function PasswordChangeModal({
   );
 }
 
-// ─── Page ─────────────────────────────────────────────────
+// ─── スコアドット ────────────────────────────────────────
 
-export default function MyPage() {
-  const { memberId, role } = useAuth();
-  const [memberDetail, setMemberDetail] = useState<MemberDetail | null>(null);
+function ScoreDot({ score }: { score: number }) {
+  const color =
+    score >= 4 ? "bg-green-500" :
+    score >= 3 ? "bg-blue-500" :
+    "bg-amber-400";
+  return (
+    <span className="inline-flex items-center justify-center gap-1">
+      <span className={`inline-block h-2 w-2 rounded-full ${color}`} />
+      <span className="text-slate-700">{score}</span>
+    </span>
+  );
+}
+
+// ─── 本日の勤怠カード（SWR独立・再レンダー隔離） ──────────
+
+const TodayAttendanceCard = memo(function TodayAttendanceCard() {
   const { data: todayAtt } = useSWR<TodayAttendance | null>("/api/attendances/today");
-  const [myProjects, setMyProjects] = useState<MyProject[]>([]);
-  const [selfReports, setSelfReports] = useState<SelfReport[]>([]);
-  const [reportAllocations, setReportAllocations] = useState<{ projectId: string; projectName: string; reportedHours: number }[]>([]);
-  const [reportSubmitted, setReportSubmitted] = useState(false);
-  const [notifySlack, setNotifySlack] = useState(true);
-  const [notifyEmail, setNotifyEmail] = useState(false);
-  const [evaluations, setEvaluations] = useState<EvalRecord[]>([]);
-  const [evalsLoading, setEvalsLoading] = useState(true);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>本日の勤怠</CardTitle>
+      </CardHeader>
+      {todayAtt ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 text-sm">
+          <div className="rounded-lg bg-slate-50 px-3 py-2">
+            <p className="text-xs text-slate-400">出勤時刻</p>
+            <p className="font-medium text-slate-800">{todayAtt.clockIn ?? "—"}</p>
+          </div>
+          <div className="rounded-lg bg-slate-50 px-3 py-2">
+            <p className="text-xs text-slate-400">退勤時刻</p>
+            <p className="font-medium text-slate-800">{todayAtt.clockOut ?? (todayAtt.status === "working" ? "勤務中" : "—")}</p>
+          </div>
+          <div className="rounded-lg bg-slate-50 px-3 py-2">
+            <p className="text-xs text-slate-400">休憩</p>
+            <p className="font-medium text-slate-800">{todayAtt.breakMinutes}分</p>
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-slate-500">本日の勤怠データがありません。</p>
+      )}
+    </Card>
+  );
+});
+
+// ─── 勤怠記録セクション（state独立・再レンダー隔離） ─────────
+
+const AttendanceSection = memo(function AttendanceSection() {
   const [attendances, setAttendances] = useState<AttRecord[]>([]);
-  const [loading, setLoading] = useState(true);
   const [attMonth, setAttMonth] = useState(MONTHS[0]);
   const [attLoading, setAttLoading] = useState(false);
-
-  // プロフィール編集モーダル
-  const [editingProfile, setEditingProfile] = useState(false);
-
-  // パスワード変更モーダル
-  const [changingPassword, setChangingPassword] = useState(false);
-
-  // 勤怠修正申請
   const [correctionTarget, setCorrectionTarget] = useState<AttRecord | null>(null);
   const [corrForm, setCorrForm] = useState({ clockIn: "", clockOut: "", breakMinutes: "0" });
   const [correcting, setCorrecting] = useState(false);
   const [corrToast, setCorrToast] = useState<string | null>(null);
   const [newForm, setNewForm] = useState({
-    open: false,
-    date: "",
-    clockIn: "",
-    clockOut: "",
-    breakMinutes: "0",
-    submitting: false,
-    error: "",
+    open: false, date: "", clockIn: "", clockOut: "", breakMinutes: "0", submitting: false, error: "",
   });
 
-  const loadAttendances = async (month: string) => {
+  const loadAttendances = useCallback(async (month: string) => {
     setAttLoading(true);
     const res = await fetch(`/api/attendances?month=${month}`);
     const data = res.ok ? await res.json() : [];
     setAttendances(Array.isArray(data) ? data : []);
     setAttLoading(false);
-  };
+  }, []);
 
   useEffect(() => {
-    if (!memberId) return;
-
-    // 第一段階: メンバー詳細＋プロジェクト＋自己申告を並行取得して表示を早める
-    Promise.all([
-      fetch("/api/mypage").then((r) => r.ok ? r.json() : null),
-      fetch(`/api/self-reports?month=${MONTHS[0]}`).then((r) => r.ok ? r.json() : []),
-    ]).then(([data, reports]) => {
-      const projects: MyProject[] = data?.projects ?? [];
-      if (data) {
-        setMemberDetail({
-          id: data.id,
-          name: data.name,
-          phone: data.phone,
-          address: data.address,
-          bankName: data.bankName,
-          bankBranch: data.bankBranch,
-          bankAccountNumber: data.bankAccountNumber,
-          bankAccountHolder: data.bankAccountHolder,
-          status: data.status,
-          salaryType: data.salaryType,
-          salaryAmount: data.salaryAmount,
-          joinedAt: data.joinedAt,
-          email: data.email,
-          role: data.role,
-          skills: data.skills,
-        });
-        setMyProjects(projects);
-      }
-      if (Array.isArray(reports)) {
-        setSelfReports(reports);
-        setReportSubmitted(reports.length > 0 && reports.every((r: SelfReport) => r.submittedAt));
-        setReportAllocations(
-          projects.map((p) => {
-            const found = reports.find((r: SelfReport) => r.projectId === p.projectId);
-            return { projectId: p.projectId, projectName: p.projectName, reportedHours: found?.reportedHours ?? 0 };
-          })
-        );
-      }
-      setLoading(false);
-    });
-
-    // 第二段階: 評価・勤怠を並行取得
-    fetch(`/api/evaluations/${memberId}?limit=6`)
-      .then((r) => r.ok ? r.json() : [])
-      .then((evals) => {
-        setEvaluations(Array.isArray(evals) ? evals : []);
-        setEvalsLoading(false);
-      });
-
-    loadAttendances(MONTHS[0]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [memberId]);
-
-  const [submittingReport, setSubmittingReport] = useState(false);
-
-  async function handleSubmitReport() {
-    setSubmittingReport(true);
-    try {
-      const res = await fetch("/api/self-reports", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          targetMonth: MONTHS[0],
-          allocations: reportAllocations.map((a) => ({ projectId: a.projectId, reportedHours: a.reportedHours })),
-        }),
-      });
-      if (res.ok) setReportSubmitted(true);
-    } finally {
-      setSubmittingReport(false);
-    }
-  }
+    loadAttendances(attMonth);
+  }, [attMonth, loadAttendances]);
 
   function openCorrection(a: AttRecord) {
     setCorrectionTarget(a);
-    setCorrForm({
-      clockIn: a.clockIn ?? "",
-      clockOut: a.clockOut ?? "",
-      breakMinutes: "0",
-    });
+    setCorrForm({ clockIn: a.clockIn ?? "", clockOut: a.clockOut ?? "", breakMinutes: "0" });
   }
 
   async function handleCorrection() {
@@ -487,370 +434,25 @@ export default function MyPage() {
     }
   }
 
-  useEffect(() => {
-    if (!memberId || loading) return;
-    loadAttendances(attMonth);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attMonth, memberId]);
-
   function prevAttMonth() {
     const idx = MONTHS.indexOf(attMonth);
-    if (idx < MONTHS.length - 1) setAttMonth(MONTHS[idx + 1]); // idx+1 = 古い月
+    if (idx < MONTHS.length - 1) setAttMonth(MONTHS[idx + 1]);
   }
   function nextAttMonth() {
     const idx = MONTHS.indexOf(attMonth);
-    if (idx > 0) setAttMonth(MONTHS[idx - 1]); // idx-1 = 新しい月
+    if (idx > 0) setAttMonth(MONTHS[idx - 1]);
   }
 
-  const totalReported = reportAllocations.reduce((s, a) => s + a.reportedHours, 0);
-
-  // 勤怠サマリー計算
   const attWorkDays = attendances.filter((a) => a.actualHours != null && a.actualHours > 0).length;
   const attTotalHours = attendances.reduce((s, a) => s + (a.actualHours ?? 0), 0);
 
-  if (loading) return <div className="py-8 text-center text-sm text-slate-400">読み込み中...</div>;
-  if (!memberDetail) return null;
-
-  const hasBankInfo = memberDetail.bankName || memberDetail.bankAccountNumber;
-
   return (
-    <div className="space-y-6 max-w-3xl">
-      {/* Toast */}
+    <>
       {corrToast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-lg bg-slate-800 px-5 py-3 text-sm text-white shadow-lg">
           <CheckCircle size={15} className="text-green-400" />
           {corrToast}
         </div>
-      )}
-
-      <div>
-        <h1 className="text-xl font-bold text-slate-800">マイページ</h1>
-        <p className="text-sm text-slate-500">アカウント情報と設定</p>
-      </div>
-
-      {/* ─── プロフィール ─── */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>プロフィール</CardTitle>
-            <Button variant="outline" size="sm" onClick={() => setEditingProfile(true)}>
-              <Pencil size={13} /> 編集
-            </Button>
-          </div>
-        </CardHeader>
-        <div className="flex items-start gap-5">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-100 text-3xl font-bold text-blue-600 shrink-0">
-            {memberDetail.name.charAt(0)}
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-xl font-bold text-slate-800">{memberDetail.name}</h2>
-              <Badge variant="default">{roleLabel[role ?? "member"]}</Badge>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-4 grid grid-cols-1 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
-          <div className="flex items-center gap-2 text-sm text-slate-600">
-            <Mail size={14} className="text-slate-400" />
-            {memberDetail.email}
-          </div>
-          {memberDetail.phone && (
-            <div className="flex items-center gap-2 text-sm text-slate-600">
-              <Phone size={14} className="text-slate-400" />
-              {memberDetail.phone}
-            </div>
-          )}
-          <div className="flex items-center gap-2 text-sm text-slate-600">
-            <Calendar size={14} className="text-slate-400" />
-            入社日: {formatDate(memberDetail.joinedAt)}
-          </div>
-          <div className="flex items-center gap-2 text-sm text-slate-600">
-            <User size={14} className="text-slate-400" />
-            {memberDetail.salaryType === "monthly" ? "月給制" : "時給制"}
-          </div>
-          {memberDetail.address && (
-            <div className="flex items-start gap-2 text-sm text-slate-600 sm:col-span-2">
-              <MapPin size={14} className="text-slate-400 mt-0.5 shrink-0" />
-              {memberDetail.address}
-            </div>
-          )}
-        </div>
-      </Card>
-
-      {/* ─── 住所・口座情報 ─── */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>
-              <CreditCard size={15} className="inline mr-1" />
-              請求書情報（住所・口座）
-            </CardTitle>
-            <Button variant="outline" size="sm" onClick={() => setEditingProfile(true)}>
-              <Pencil size={13} /> 編集
-            </Button>
-          </div>
-        </CardHeader>
-        {hasBankInfo ? (
-          <div className="space-y-2 text-sm">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <p className="text-xs text-slate-500">銀行名</p>
-                <p className="font-medium text-slate-800">{memberDetail.bankName ?? "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500">支店名</p>
-                <p className="font-medium text-slate-800">{memberDetail.bankBranch ?? "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500">口座番号</p>
-                <p className="font-medium text-slate-800">
-                  {memberDetail.bankAccountNumber
-                    ? `****${memberDetail.bankAccountNumber.slice(-4)}`
-                    : "—"}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500">口座名義</p>
-                <p className="font-medium text-slate-800">{memberDetail.bankAccountHolder ?? "—"}</p>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            <CreditCard size={15} className="shrink-0" />
-            <span>口座情報が未登録です。「編集」から登録してください。登録すると請求書に自動挿入されます。</span>
-          </div>
-        )}
-      </Card>
-
-      {/* ─── 本日の勤怠 ─── */}
-      <Card>
-        <CardHeader>
-          <CardTitle>本日の勤怠</CardTitle>
-        </CardHeader>
-        {todayAtt ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 text-sm">
-            <div className="rounded-lg bg-slate-50 px-3 py-2">
-              <p className="text-xs text-slate-400">出勤時刻</p>
-              <p className="font-medium text-slate-800">{todayAtt.clockIn ?? "—"}</p>
-            </div>
-            <div className="rounded-lg bg-slate-50 px-3 py-2">
-              <p className="text-xs text-slate-400">退勤時刻</p>
-              <p className="font-medium text-slate-800">{todayAtt.clockOut ?? (todayAtt.status === "working" ? "勤務中" : "—")}</p>
-            </div>
-            <div className="rounded-lg bg-slate-50 px-3 py-2">
-              <p className="text-xs text-slate-400">休憩</p>
-              <p className="font-medium text-slate-800">{todayAtt.breakMinutes}分</p>
-            </div>
-          </div>
-        ) : (
-          <p className="text-sm text-slate-500">本日の勤怠データがありません。</p>
-        )}
-      </Card>
-
-      {/* ─── スキル ─── */}
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            <Star size={15} className="inline mr-1" />
-            スキル
-          </CardTitle>
-        </CardHeader>
-        {memberDetail.skills.length === 0 ? (
-          <p className="text-sm text-slate-500">スキル評価がまだ登録されていません。</p>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {memberDetail.skills.map((skill) => (
-                <div key={skill.id} className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-slate-400">{skill.categoryName}</p>
-                      <p className="text-sm font-medium text-slate-800">{skill.skillName}</p>
-                    </div>
-                    <span className="text-xs text-amber-500 font-medium">{levelLabels[skill.level]}</span>
-                  </div>
-                  <div className="mt-1.5 flex gap-0.5">
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <div
-                        key={n}
-                        className={`h-1.5 flex-1 rounded-full ${n <= skill.level ? "bg-blue-500" : "bg-slate-200"}`}
-                      />
-                    ))}
-                  </div>
-                  {skill.memo && (
-                    <p className="mt-1 text-xs text-slate-400 truncate">{skill.memo}</p>
-                  )}
-                  <p className="mt-0.5 text-xs text-slate-300">評価日: {formatDate(skill.evaluatedAt)}</p>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </Card>
-
-      {/* ─── 人事評価（PAS） ─── */}
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            <Award size={15} className="inline mr-1" />
-            人事評価（PAS）
-          </CardTitle>
-        </CardHeader>
-        {evalsLoading ? (
-          <p className="text-sm text-slate-400">読み込み中...</p>
-        ) : evaluations.length === 0 ? (
-          <p className="text-sm text-slate-500">人事評価の記録がまだありません。</p>
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="border-b border-slate-100">
-                  <tr className="text-xs text-slate-500">
-                    <th className="py-2 text-left font-medium">対象期間</th>
-                    <th className="py-2 text-center font-medium">P点<br /><span className="font-normal text-slate-400">Professional</span></th>
-                    <th className="py-2 text-center font-medium">A点<br /><span className="font-normal text-slate-400">Appearance</span></th>
-                    <th className="py-2 text-center font-medium">S点<br /><span className="font-normal text-slate-400">Skill</span></th>
-                    <th className="py-2 text-center font-medium">平均</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {evaluations.map((ev) => (
-                    <tr key={ev.id} className="border-b border-slate-50 hover:bg-slate-50">
-                      <td className="py-2 font-medium text-slate-800">
-                        {ev.targetPeriod.replace("-", "年")}月
-                      </td>
-                      <td className="py-2 text-center">
-                        <ScoreDot score={ev.scoreP} />
-                      </td>
-                      <td className="py-2 text-center">
-                        <ScoreDot score={ev.scoreA} />
-                      </td>
-                      <td className="py-2 text-center">
-                        <ScoreDot score={ev.scoreS} />
-                      </td>
-                      <td className="py-2 text-center font-semibold text-blue-700">
-                        {ev.totalAvg.toFixed(1)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {evaluations.some((ev) => ev.comment) && (
-              <div className="mt-3 space-y-2">
-                {evaluations.filter((ev) => ev.comment).slice(0, 3).map((ev) => (
-                  <div key={ev.id} className="rounded-md bg-blue-50 px-3 py-2 text-sm">
-                    <p className="text-xs text-blue-600 font-medium mb-0.5">{ev.targetPeriod.replace("-", "年")}月 コメント</p>
-                    <p className="text-slate-700">{ev.comment}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-      </Card>
-
-      {/* ─── 担当プロジェクト ─── */}
-      <Card>
-        <CardHeader>
-          <CardTitle>担当プロジェクト</CardTitle>
-        </CardHeader>
-        {myProjects.length === 0 ? (
-          <p className="text-sm text-slate-500">担当プロジェクトはありません。</p>
-        ) : (
-          <div className="space-y-2">
-            {myProjects.map((pj) => (
-              <div key={pj.projectId} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-                <div>
-                  <span className="text-sm font-medium text-slate-800">{pj.projectName}</span>
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    役割: {pj.role} | 稼働: {pj.workloadHours}h/月
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-
-      {/* ─── 月次工数自己申告 ─── */}
-      {myProjects.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              <ClipboardList size={16} className="inline mr-1" />
-              月次工数自己申告（{MONTHS[0].replace("-", "年")}月）
-            </CardTitle>
-          </CardHeader>
-          {reportSubmitted ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 rounded-lg bg-green-50 px-4 py-3">
-                <CheckCircle size={15} className="text-green-600" />
-                <span className="text-sm text-green-700 font-medium">申告済み</span>
-              </div>
-              <table className="w-full text-sm">
-                <thead className="border-b border-slate-100">
-                  <tr className="text-xs text-slate-500">
-                    <th className="py-2 text-left font-medium">プロジェクト</th>
-                    <th className="py-2 text-right font-medium">申告時間</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {reportAllocations.map((a) => (
-                    <tr key={a.projectId} className="border-b border-slate-50">
-                      <td className="py-2 text-slate-700">{a.projectName}</td>
-                      <td className="py-2 text-right font-medium text-slate-800">{a.reportedHours}h</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <p className="text-xs text-slate-400 text-right">合計: {totalReported}h</p>
-              <div className="flex justify-end">
-                <Button variant="outline" size="sm" onClick={() => setReportSubmitted(false)}>修正する</Button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <p className="text-xs text-slate-500">各プロジェクトに割いた時間を概算で入力してください。</p>
-              <table className="w-full text-sm">
-                <thead className="border-b border-slate-100">
-                  <tr className="text-xs text-slate-500">
-                    <th className="py-2 text-left font-medium">プロジェクト</th>
-                    <th className="py-2 text-right font-medium">時間（h）</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {reportAllocations.map((a, i) => (
-                    <tr key={a.projectId} className="border-b border-slate-50">
-                      <td className="py-2 text-slate-700">{a.projectName}</td>
-                      <td className="py-2 text-right">
-                        <input
-                          type="number"
-                          min={0}
-                          value={a.reportedHours}
-                          onChange={(e) => {
-                            const next = [...reportAllocations];
-                            next[i] = { ...next[i], reportedHours: Number(e.target.value) };
-                            setReportAllocations(next);
-                          }}
-                          className="w-20 rounded border border-slate-300 px-2 py-1 text-right text-sm focus:border-blue-500 focus:outline-none"
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-600">
-                  合計: <span className="font-bold text-slate-800">{totalReported}h</span>
-                </span>
-                <Button variant="primary" size="sm" onClick={handleSubmitReport} disabled={submittingReport}>{submittingReport ? "送信中..." : "申告する"}</Button>
-              </div>
-            </div>
-          )}
-        </Card>
       )}
 
       {/* ─── 勤怠記録 ─── */}
@@ -887,7 +489,6 @@ export default function MyPage() {
           <p className="py-4 text-center text-sm text-slate-400">読み込み中...</p>
         ) : (
           <>
-            {/* 新規申請フォーム */}
             {newForm.open && (
               <form onSubmit={handleNewAttendance} className="mx-4 mb-4 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 flex flex-wrap gap-3 items-end">
                 <div className="flex flex-col gap-1">
@@ -1013,7 +614,7 @@ export default function MyPage() {
         )}
       </Card>
 
-      {/* ─── 勤怠修正申請モーダル ─── */}
+      {/* 勤怠修正申請モーダル */}
       <Modal
         isOpen={!!correctionTarget}
         onClose={() => setCorrectionTarget(null)}
@@ -1069,6 +670,154 @@ export default function MyPage() {
           </div>
         )}
       </Modal>
+    </>
+  );
+});
+
+// ─── 自己申告セクション（state独立・再レンダー隔離） ──────────
+
+const SelfReportSection = memo(function SelfReportSection({ myProjects }: { myProjects: MyProject[] }) {
+  const { data: selfReportsData } = useSWR<SelfReport[]>(`/api/self-reports?month=${MONTHS[0]}`);
+  const [reportAllocations, setReportAllocations] = useState<{ projectId: string; projectName: string; reportedHours: number }[]>([]);
+  const [reportSubmitted, setReportSubmitted] = useState(false);
+  const [submittingReport, setSubmittingReport] = useState(false);
+  const [notifySlack, setNotifySlack] = useState(true);
+  const [notifyEmail, setNotifyEmail] = useState(false);
+
+  useEffect(() => {
+    if (!selfReportsData || !myProjects.length) return;
+    setReportSubmitted(selfReportsData.length > 0 && selfReportsData.every((r) => r.submittedAt));
+    setReportAllocations(
+      myProjects.map((p) => {
+        const found = selfReportsData.find((r) => r.projectId === p.projectId);
+        return { projectId: p.projectId, projectName: p.projectName, reportedHours: found?.reportedHours ?? 0 };
+      })
+    );
+  }, [selfReportsData, myProjects]);
+
+  async function handleSubmitReport() {
+    setSubmittingReport(true);
+    try {
+      const res = await fetch("/api/self-reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetMonth: MONTHS[0],
+          allocations: reportAllocations.map((a) => ({ projectId: a.projectId, reportedHours: a.reportedHours })),
+        }),
+      });
+      if (res.ok) setReportSubmitted(true);
+    } finally {
+      setSubmittingReport(false);
+    }
+  }
+
+  const totalReported = reportAllocations.reduce((s, a) => s + a.reportedHours, 0);
+
+  return (
+    <>
+      {/* ─── 担当プロジェクト ─── */}
+      <Card>
+        <CardHeader>
+          <CardTitle>担当プロジェクト</CardTitle>
+        </CardHeader>
+        {myProjects.length === 0 ? (
+          <p className="text-sm text-slate-500">担当プロジェクトはありません。</p>
+        ) : (
+          <div className="space-y-2">
+            {myProjects.map((pj) => (
+              <div key={pj.projectId} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                <div>
+                  <span className="text-sm font-medium text-slate-800">{pj.projectName}</span>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    役割: {pj.role} | 稼働: {pj.workloadHours}h/月
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* ─── 月次工数自己申告 ─── */}
+      {myProjects.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <ClipboardList size={16} className="inline mr-1" />
+              月次工数自己申告（{MONTHS[0].replace("-", "年")}月）
+            </CardTitle>
+          </CardHeader>
+          {reportSubmitted ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 rounded-lg bg-green-50 px-4 py-3">
+                <CheckCircle size={15} className="text-green-600" />
+                <span className="text-sm text-green-700 font-medium">申告済み</span>
+              </div>
+              <table className="w-full text-sm">
+                <thead className="border-b border-slate-100">
+                  <tr className="text-xs text-slate-500">
+                    <th className="py-2 text-left font-medium">プロジェクト</th>
+                    <th className="py-2 text-right font-medium">申告時間</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reportAllocations.map((a) => (
+                    <tr key={a.projectId} className="border-b border-slate-50">
+                      <td className="py-2 text-slate-700">{a.projectName}</td>
+                      <td className="py-2 text-right font-medium text-slate-800">{a.reportedHours}h</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="text-xs text-slate-400 text-right">合計: {totalReported}h</p>
+              <div className="flex justify-end">
+                <Button variant="outline" size="sm" onClick={() => setReportSubmitted(false)}>修正する</Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-500">各プロジェクトに割いた時間を概算で入力してください。</p>
+              <table className="w-full text-sm">
+                <thead className="border-b border-slate-100">
+                  <tr className="text-xs text-slate-500">
+                    <th className="py-2 text-left font-medium">プロジェクト</th>
+                    <th className="py-2 text-right font-medium">時間（h）</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reportAllocations.map((a, i) => (
+                    <tr key={a.projectId} className="border-b border-slate-50">
+                      <td className="py-2 text-slate-700">{a.projectName}</td>
+                      <td className="py-2 text-right">
+                        <input
+                          type="number"
+                          min={0}
+                          value={a.reportedHours}
+                          onChange={(e) => {
+                            const next = [...reportAllocations];
+                            next[i] = { ...next[i], reportedHours: Number(e.target.value) };
+                            setReportAllocations(next);
+                          }}
+                          className="w-20 rounded border border-slate-300 px-2 py-1 text-right text-sm focus:border-blue-500 focus:outline-none"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-slate-600">
+                  合計: <span className="font-bold text-slate-800">{totalReported}h</span>
+                </span>
+                <Button variant="primary" size="sm" onClick={handleSubmitReport} disabled={submittingReport}>
+                  {submittingReport ? "送信中..." : "申告する"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* ─── 通知設定 ─── */}
       <Card>
@@ -1105,6 +854,278 @@ export default function MyPage() {
           </label>
         </div>
       </Card>
+    </>
+  );
+});
+
+// ─── Page ─────────────────────────────────────────────────
+
+export default function MyPage() {
+  const { memberId, role } = useAuth();
+  const [memberDetail, setMemberDetail] = useState<MemberDetail | null>(null);
+  const [myProjects, setMyProjects] = useState<MyProject[]>([]);
+  const [evaluations, setEvaluations] = useState<EvalRecord[]>([]);
+  const [evalsLoading, setEvalsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+
+  useEffect(() => {
+    if (!memberId) return;
+
+    // 第一段階: メンバー詳細＋プロジェクトを取得して表示を早める
+    fetch("/api/mypage")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data) {
+          setMemberDetail({
+            id: data.id,
+            name: data.name,
+            phone: data.phone,
+            address: data.address,
+            bankName: data.bankName,
+            bankBranch: data.bankBranch,
+            bankAccountNumber: data.bankAccountNumber,
+            bankAccountHolder: data.bankAccountHolder,
+            status: data.status,
+            salaryType: data.salaryType,
+            salaryAmount: data.salaryAmount,
+            joinedAt: data.joinedAt,
+            email: data.email,
+            role: data.role,
+            skills: data.skills,
+          });
+          setMyProjects(data.projects ?? []);
+        }
+        setLoading(false);
+      });
+
+    // 第二段階: 評価を遅延取得
+    fetch(`/api/evaluations/${memberId}?limit=6`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((evals) => {
+        setEvaluations(Array.isArray(evals) ? evals : []);
+        setEvalsLoading(false);
+      });
+  }, [memberId]);
+
+  if (loading) return <div className="py-8 text-center text-sm text-slate-400">読み込み中...</div>;
+  if (!memberDetail) return null;
+
+  const hasBankInfo = memberDetail.bankName || memberDetail.bankAccountNumber;
+
+  return (
+    <div className="space-y-6 max-w-3xl">
+      <div>
+        <h1 className="text-xl font-bold text-slate-800">マイページ</h1>
+        <p className="text-sm text-slate-500">アカウント情報と設定</p>
+      </div>
+
+      {/* ─── プロフィール ─── */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>プロフィール</CardTitle>
+            <Button variant="outline" size="sm" onClick={() => setEditingProfile(true)}>
+              <Pencil size={13} /> 編集
+            </Button>
+          </div>
+        </CardHeader>
+        <div className="flex items-start gap-5">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-100 text-3xl font-bold text-blue-600 shrink-0">
+            {memberDetail.name.charAt(0)}
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-xl font-bold text-slate-800">{memberDetail.name}</h2>
+              <Badge variant="default">{roleLabel[role ?? "member"]}</Badge>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
+          <div className="flex items-center gap-2 text-sm text-slate-600">
+            <Mail size={14} className="text-slate-400" />
+            {memberDetail.email}
+          </div>
+          {memberDetail.phone && (
+            <div className="flex items-center gap-2 text-sm text-slate-600">
+              <Phone size={14} className="text-slate-400" />
+              {memberDetail.phone}
+            </div>
+          )}
+          <div className="flex items-center gap-2 text-sm text-slate-600">
+            <Calendar size={14} className="text-slate-400" />
+            入社日: {formatDate(memberDetail.joinedAt)}
+          </div>
+          <div className="flex items-center gap-2 text-sm text-slate-600">
+            <User size={14} className="text-slate-400" />
+            {memberDetail.salaryType === "monthly" ? "月給制" : "時給制"}
+          </div>
+          {memberDetail.address && (
+            <div className="flex items-start gap-2 text-sm text-slate-600 sm:col-span-2">
+              <MapPin size={14} className="text-slate-400 mt-0.5 shrink-0" />
+              {memberDetail.address}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {/* ─── 住所・口座情報 ─── */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>
+              <CreditCard size={15} className="inline mr-1" />
+              請求書情報（住所・口座）
+            </CardTitle>
+            <Button variant="outline" size="sm" onClick={() => setEditingProfile(true)}>
+              <Pencil size={13} /> 編集
+            </Button>
+          </div>
+        </CardHeader>
+        {hasBankInfo ? (
+          <div className="space-y-2 text-sm">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs text-slate-500">銀行名</p>
+                <p className="font-medium text-slate-800">{memberDetail.bankName ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">支店名</p>
+                <p className="font-medium text-slate-800">{memberDetail.bankBranch ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">口座番号</p>
+                <p className="font-medium text-slate-800">
+                  {memberDetail.bankAccountNumber
+                    ? `****${memberDetail.bankAccountNumber.slice(-4)}`
+                    : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">口座名義</p>
+                <p className="font-medium text-slate-800">{memberDetail.bankAccountHolder ?? "—"}</p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <CreditCard size={15} className="shrink-0" />
+            <span>口座情報が未登録です。「編集」から登録してください。登録すると請求書に自動挿入されます。</span>
+          </div>
+        )}
+      </Card>
+
+      {/* ─── 本日の勤怠（SWR独立） ─── */}
+      <TodayAttendanceCard />
+
+      {/* ─── スキル ─── */}
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <Star size={15} className="inline mr-1" />
+            スキル
+          </CardTitle>
+        </CardHeader>
+        {memberDetail.skills.length === 0 ? (
+          <p className="text-sm text-slate-500">スキル評価がまだ登録されていません。</p>
+        ) : (
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {memberDetail.skills.map((skill) => (
+              <div key={skill.id} className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-slate-400">{skill.categoryName}</p>
+                    <p className="text-sm font-medium text-slate-800">{skill.skillName}</p>
+                  </div>
+                  <span className="text-xs text-amber-500 font-medium">{levelLabels[skill.level]}</span>
+                </div>
+                <div className="mt-1.5 flex gap-0.5">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <div
+                      key={n}
+                      className={`h-1.5 flex-1 rounded-full ${n <= skill.level ? "bg-blue-500" : "bg-slate-200"}`}
+                    />
+                  ))}
+                </div>
+                {skill.memo && (
+                  <p className="mt-1 text-xs text-slate-400 truncate">{skill.memo}</p>
+                )}
+                <p className="mt-0.5 text-xs text-slate-300">評価日: {formatDate(skill.evaluatedAt)}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* ─── 人事評価（PAS） ─── */}
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <Award size={15} className="inline mr-1" />
+            人事評価（PAS）
+          </CardTitle>
+        </CardHeader>
+        {evalsLoading ? (
+          <p className="text-sm text-slate-400">読み込み中...</p>
+        ) : evaluations.length === 0 ? (
+          <p className="text-sm text-slate-500">人事評価の記録がまだありません。</p>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="border-b border-slate-100">
+                  <tr className="text-xs text-slate-500">
+                    <th className="py-2 text-left font-medium">対象期間</th>
+                    <th className="py-2 text-center font-medium">P点<br /><span className="font-normal text-slate-400">Professional</span></th>
+                    <th className="py-2 text-center font-medium">A点<br /><span className="font-normal text-slate-400">Appearance</span></th>
+                    <th className="py-2 text-center font-medium">S点<br /><span className="font-normal text-slate-400">Skill</span></th>
+                    <th className="py-2 text-center font-medium">平均</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {evaluations.map((ev) => (
+                    <tr key={ev.id} className="border-b border-slate-50 hover:bg-slate-50">
+                      <td className="py-2 font-medium text-slate-800">
+                        {ev.targetPeriod.replace("-", "年")}月
+                      </td>
+                      <td className="py-2 text-center">
+                        <ScoreDot score={ev.scoreP} />
+                      </td>
+                      <td className="py-2 text-center">
+                        <ScoreDot score={ev.scoreA} />
+                      </td>
+                      <td className="py-2 text-center">
+                        <ScoreDot score={ev.scoreS} />
+                      </td>
+                      <td className="py-2 text-center font-semibold text-blue-700">
+                        {ev.totalAvg.toFixed(1)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {evaluations.some((ev) => ev.comment) && (
+              <div className="mt-3 space-y-2">
+                {evaluations.filter((ev) => ev.comment).slice(0, 3).map((ev) => (
+                  <div key={ev.id} className="rounded-md bg-blue-50 px-3 py-2 text-sm">
+                    <p className="text-xs text-blue-600 font-medium mb-0.5">{ev.targetPeriod.replace("-", "年")}月 コメント</p>
+                    <p className="text-slate-700">{ev.comment}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </Card>
+
+      {/* ─── 自己申告・プロジェクト・通知設定（state独立） ─── */}
+      <SelfReportSection myProjects={myProjects} />
+
+      {/* ─── 勤怠記録（state独立） ─── */}
+      <AttendanceSection />
 
       {/* ─── セキュリティ ─── */}
       <Card>
@@ -1147,19 +1168,5 @@ export default function MyPage() {
         />
       )}
     </div>
-  );
-}
-
-// スコアドット（評価点を色付きバッジで表示）
-function ScoreDot({ score }: { score: number }) {
-  const color =
-    score >= 4 ? "bg-green-500" :
-    score >= 3 ? "bg-blue-500" :
-    "bg-amber-400";
-  return (
-    <span className="inline-flex items-center justify-center gap-1">
-      <span className={`inline-block h-2 w-2 rounded-full ${color}`} />
-      <span className="text-slate-700">{score}</span>
-    </span>
   );
 }
