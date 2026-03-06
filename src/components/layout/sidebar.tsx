@@ -14,6 +14,7 @@ import {
   Settings,
   Wallet,
   X,
+  ChevronLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
@@ -23,6 +24,9 @@ interface NavItem {
   label: string;
   icon: React.ElementType;
 }
+
+// admin/manager がダッシュボードハブから遷移するページ（戻るリンクを表示）
+const HUB_PAGES = ["/dashboard", "/mypage", "/settings"];
 
 // admin / manager: ダッシュボード（ハブ）・マイページ・設定のみ
 const PRIVILEGED_NAV: NavItem[] = [
@@ -51,8 +55,9 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { role } = useAuth();
 
-  const navItems =
-    role === "admin" || role === "manager" ? PRIVILEGED_NAV : MEMBER_NAV;
+  const isPrivileged = role === "admin" || role === "manager";
+  const navItems = isPrivileged ? PRIVILEGED_NAV : MEMBER_NAV;
+  const showBackLink = isPrivileged && !HUB_PAGES.includes(pathname);
 
   return (
     <>
@@ -81,6 +86,19 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-3">
           <ul className="space-y-0.5 px-2">
+            {/* モバイル: 非ハブページにいる admin/manager 向け戻るリンク */}
+            {showBackLink && (
+              <li className="md:hidden">
+                <Link
+                  href="/dashboard"
+                  onClick={onClose}
+                  className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                >
+                  <ChevronLeft size={16} />
+                  ダッシュボードに戻る
+                </Link>
+              </li>
+            )}
             {navItems.map((item) => {
               const active =
                 item.href === "/dashboard"

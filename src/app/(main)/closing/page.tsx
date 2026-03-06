@@ -105,6 +105,11 @@ function AdminClosingView() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   });
   const [aggregateWarning, setAggregateWarning] = useState(false);
+  const [aggregating, setAggregating] = useState(false);
+  const [sendingAll, setSendingAll] = useState(false);
+  const [sendingSlackId, setSendingSlackId] = useState<string | null>(null);
+  const [forcingId, setForcingId] = useState<string | null>(null);
+  const [accountingId, setAccountingId] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [detailInvoice, setDetailInvoice] = useState<Invoice | null>(null);
 
@@ -133,57 +138,82 @@ function AdminClosingView() {
 
   async function doAggregate() {
     setAggregateWarning(false);
-    await reloadData();
-    showToast("集計を最新の状態に更新しました");
+    setAggregating(true);
+    try {
+      await reloadData();
+      showToast("集計を最新の状態に更新しました");
+    } finally {
+      setAggregating(false);
+    }
   }
 
   async function handleSendSlack(memberId: string) {
-    const res = await fetch(`/api/closing/members/${memberId}/notify`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ month: targetMonth }),
-    });
-    if (res.ok) {
-      const memberName = records.find((r) => r.memberId === memberId)?.memberName ?? "";
-      showToast(`${memberName} さんにSlack確認依頼を送信しました`);
-      await reloadData();
+    setSendingSlackId(memberId);
+    try {
+      const res = await fetch(`/api/closing/members/${memberId}/notify`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month: targetMonth }),
+      });
+      if (res.ok) {
+        const memberName = records.find((r) => r.memberId === memberId)?.memberName ?? "";
+        showToast(`${memberName} さんにSlack確認依頼を送信しました`);
+        await reloadData();
+      }
+    } finally {
+      setSendingSlackId(null);
     }
   }
 
   async function handleSendAll() {
-    const notSent = records.filter((r) => r.confirmStatus === "not_sent");
-    await Promise.all(
-      notSent.map((r) =>
-        fetch(`/api/closing/members/${r.memberId}/notify`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ month: targetMonth }),
-        })
-      )
-    );
-    showToast("未送信メンバー全員にSlack確認依頼を送信しました");
-    await reloadData();
+    setSendingAll(true);
+    try {
+      const notSent = records.filter((r) => r.confirmStatus === "not_sent");
+      await Promise.all(
+        notSent.map((r) =>
+          fetch(`/api/closing/members/${r.memberId}/notify`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ month: targetMonth }),
+          })
+        )
+      );
+      showToast("未送信メンバー全員にSlack確認依頼を送信しました");
+      await reloadData();
+    } finally {
+      setSendingAll(false);
+    }
   }
 
   async function handleForce(memberId: string) {
-    const res = await fetch(`/api/closing/members/${memberId}/force-confirm`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ month: targetMonth }),
-    });
-    if (res.ok) {
-      showToast("強制確定しました");
-      await reloadData();
+    setForcingId(memberId);
+    try {
+      const res = await fetch(`/api/closing/members/${memberId}/force-confirm`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month: targetMonth }),
+      });
+      if (res.ok) {
+        showToast("強制確定しました");
+        await reloadData();
+      }
+    } finally {
+      setForcingId(null);
     }
   }
 
   async function handleAccounting(invoiceId: string, memberName: string) {
-    const res = await fetch(`/api/invoices/${invoiceId}/accounting`, {
-      method: "PATCH",
-    });
-    if (res.ok) {
-      showToast(`${memberName} さんの請求書を LayerX へ送付しました`);
-      await reloadData();
+    setAccountingId(invoiceId);
+    try {
+      const res = await fetch(`/api/invoices/${invoiceId}/accounting`, {
+        method: "PATCH",
+      });
+      if (res.ok) {
+        showToast(`${memberName} さんの請求書を LayerX へ送付しました`);
+        await reloadData();
+      }
+    } finally {
+      setAccountingId(null);
     }
   }
 
@@ -290,8 +320,8 @@ function AdminClosingView() {
           <RefreshCw size={15} /> データを更新
         </Button>
         {notSentCount > 0 && (
-          <Button variant="primary" onClick={handleSendAll}>
-            <Send size={15} /> 未通知 {notSentCount}名 に一括Slack通知
+          <Button variant="primary" onClick={handleSendAll} disabled={sendingAll}>
+            <Send size={15} /> {sendingAll ? "送信中..." : `未通知 ${notSentCount}名 に一括Slack通知`}
           </Button>
         )}
       </div>
@@ -342,17 +372,17 @@ function AdminClosingView() {
                     <td className="px-4 py-3">
                       <div className="flex gap-1.5 flex-wrap">
                         {rec.confirmStatus === "not_sent" && (
-                          <Button size="sm" variant="outline" onClick={() => handleSendSlack(rec.memberId)}>
-                            <Send size={12} /> Slack通知
+                          <Button size="sm" variant="outline" onClick={() => handleSendSlack(rec.memberId)} disabled={sendingSlackId === rec.memberId}>
+                            <Send size={12} /> {sendingSlackId === rec.memberId ? "送信中..." : "Slack通知"}
                           </Button>
                         )}
                         {rec.confirmStatus === "waiting" && (
                           <>
-                            <Button size="sm" variant="outline" onClick={() => handleSendSlack(rec.memberId)}>
-                              <RefreshCw size={12} /> 再通知
+                            <Button size="sm" variant="outline" onClick={() => handleSendSlack(rec.memberId)} disabled={sendingSlackId === rec.memberId}>
+                              <RefreshCw size={12} /> {sendingSlackId === rec.memberId ? "送信中..." : "再通知"}
                             </Button>
-                            <Button size="sm" variant="secondary" onClick={() => handleForce(rec.memberId)}>
-                              <Zap size={12} /> 強制確定
+                            <Button size="sm" variant="secondary" onClick={() => handleForce(rec.memberId)} disabled={forcingId === rec.memberId}>
+                              <Zap size={12} /> {forcingId === rec.memberId ? "処理中..." : "強制確定"}
                             </Button>
                           </>
                         )}
@@ -474,8 +504,8 @@ function AdminClosingView() {
                                 </Button>
                               )}
                               {inv && invStatus === "sent" && (
-                                <Button size="sm" variant="primary" onClick={() => handleAccounting(inv.id, rec.memberName)}>
-                                  <Send size={12} /> LayerXへ送付
+                                <Button size="sm" variant="primary" onClick={() => handleAccounting(inv.id, rec.memberName)} disabled={accountingId === inv.id}>
+                                  <Send size={12} /> {accountingId === inv.id ? "送付中..." : "LayerXへ送付"}
                                 </Button>
                               )}
                               {invStatus === "confirmed" && (
@@ -571,7 +601,7 @@ function AdminClosingView() {
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setAggregateWarning(false)}>キャンセル</Button>
-            <Button variant="danger" onClick={doAggregate}>このまま更新する</Button>
+            <Button variant="danger" onClick={doAggregate} disabled={aggregating}>{aggregating ? "更新中..." : "このまま更新する"}</Button>
           </div>
         </div>
       </Modal>

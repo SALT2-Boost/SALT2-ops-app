@@ -163,6 +163,7 @@ model Member {
   personnelEvaluations PersonnelEvaluation[]
 
   @@index([deletedAt])
+  @@index([leftAt])
   @@index([status])
   @@map("members")
 }

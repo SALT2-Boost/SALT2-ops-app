@@ -395,16 +395,23 @@ export default function MyPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [memberId]);
 
+  const [submittingReport, setSubmittingReport] = useState(false);
+
   async function handleSubmitReport() {
-    const res = await fetch("/api/self-reports", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        targetMonth: MONTHS[0],
-        allocations: reportAllocations.map((a) => ({ projectId: a.projectId, reportedHours: a.reportedHours })),
-      }),
-    });
-    if (res.ok) setReportSubmitted(true);
+    setSubmittingReport(true);
+    try {
+      const res = await fetch("/api/self-reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetMonth: MONTHS[0],
+          allocations: reportAllocations.map((a) => ({ projectId: a.projectId, reportedHours: a.reportedHours })),
+        }),
+      });
+      if (res.ok) setReportSubmitted(true);
+    } finally {
+      setSubmittingReport(false);
+    }
   }
 
   function openCorrection(a: AttRecord) {
@@ -826,7 +833,7 @@ export default function MyPage() {
                 <span className="text-sm text-slate-600">
                   合計: <span className="font-bold text-slate-800">{totalReported}h</span>
                 </span>
-                <Button variant="primary" size="sm" onClick={handleSubmitReport}>申告する</Button>
+                <Button variant="primary" size="sm" onClick={handleSubmitReport} disabled={submittingReport}>{submittingReport ? "送信中..." : "申告する"}</Button>
               </div>
             </div>
           )}

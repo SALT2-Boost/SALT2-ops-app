@@ -19,6 +19,7 @@ interface TodayRecord {
   clockIn: string | null;
   clockOut: string | null;
   breakMinutes: number;
+  actualHours: number | null;
   todoToday: string | null;
   doneToday: string | null;
   todoTomorrow: string | null;
@@ -73,6 +74,8 @@ export default function AttendancePage() {
   const [tomorrowPlan, setTomorrowPlan] = useState("");
   const [breakMinutes, setBreakMinutes] = useState("0");
   const [clockInError, setClockInError] = useState("");
+  const [clockingIn, setClockingIn] = useState(false);
+  const [clockingOut, setClockingOut] = useState(false);
   const [actionLog, setActionLog] = useState<string[]>([]);
 
   useEffect(() => {
@@ -88,33 +91,43 @@ export default function AttendancePage() {
     if (!workLocation) { setClockInError("勤務場所を選択してください"); return; }
     if (!todayPlan.trim()) { setClockInError("今日やることを入力してください"); return; }
     setClockInError("");
-    const res = await fetch("/api/attendances/clock-in", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date: todayStr, todoToday: todayPlan, locationType: locationTypeMap[workLocation] ?? "office" }),
-    });
-    if (res.ok) {
-      setActionLog((prev) => [`${timeStr()} 出勤しました（${workLocation}）`, ...prev]);
-      await mutateToday();
+    setClockingIn(true);
+    try {
+      const res = await fetch("/api/attendances/clock-in", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: todayStr, todoToday: todayPlan, locationType: locationTypeMap[workLocation] ?? "office" }),
+      });
+      if (res.ok) {
+        setActionLog((prev) => [`${timeStr()} 出勤しました（${workLocation}）`, ...prev]);
+        await mutateToday();
+      }
+    } finally {
+      setClockingIn(false);
     }
   }
 
   async function clockOut() {
-    const res = await fetch("/api/attendances/clock-out", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        date: myRecord?.date ?? todayStr,
-        doneToday: todayDone,
-        todoTomorrow: tomorrowPlan,
-        breakMinutes: Number(breakMinutes),
-      }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      const hours = data.workMinutes != null ? (data.workMinutes / 60).toFixed(1) : "—";
-      setActionLog((prev) => [`${timeStr()} 退勤しました（実働 ${hours}h）`, ...prev]);
-      await mutateToday();
+    setClockingOut(true);
+    try {
+      const res = await fetch("/api/attendances/clock-out", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date: myRecord?.date ?? todayStr,
+          doneToday: todayDone,
+          todoTomorrow: tomorrowPlan,
+          breakMinutes: Number(breakMinutes),
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const hours = data.workMinutes != null ? (data.workMinutes / 60).toFixed(1) : "—";
+        setActionLog((prev) => [`${timeStr()} 退勤しました（実働 ${hours}h）`, ...prev]);
+        await mutateToday();
+      }
+    } finally {
+      setClockingOut(false);
     }
   }
 
@@ -202,9 +215,9 @@ export default function AttendancePage() {
                 />
               </div>
               {clockInError && <p className="text-xs text-red-600">{clockInError}</p>}
-              <Button variant="primary" size="lg" className="w-full" onClick={clockIn} disabled={!memberId}>
+              <Button variant="primary" size="lg" className="w-full" onClick={clockIn} disabled={!memberId || clockingIn}>
                 <CheckCircle size={18} />
-                出勤する
+                {clockingIn ? "送信中..." : "出勤する"}
               </Button>
             </div>
           )}
@@ -256,6 +269,7 @@ export default function AttendancePage() {
                 variant="danger"
                 size="lg"
                 className="w-full"
+                disabled={clockingOut}
                 onClick={() => {
                   if (!todayDone.trim()) { setClockInError("今日やったことを入力してください"); return; }
                   if (!tomorrowPlan.trim()) { setClockInError("次回勤務日にやることを入力してください"); return; }
@@ -263,20 +277,46 @@ export default function AttendancePage() {
                   clockOut();
                 }}
               >
-                退勤する
+                {clockingOut ? "送信中..." : "退勤する"}
               </Button>
             </div>
           )}
 
           {/* 退勤済み */}
           {myStatus === "done" && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-center gap-2 rounded-lg bg-slate-100 py-3 text-slate-500">
+            <div className="space-y-3">
+              <div className="flex items-center justify-center gap-2 rounded-lg bg-green-50 py-3 text-green-700">
                 <CheckCircle size={16} />
-                <span className="text-sm font-medium">本日の勤怠は完了しています</span>
+                <span className="text-sm font-medium">お疲れ様でした！</span>
               </div>
-              {myRecord?.clockOut && (
-                <p className="text-center text-xs text-slate-400">退勤: {myRecord.clockOut}</p>
+              {/* 実績サマリー */}
+              <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-500">出勤</span>
+                  <span className="font-medium text-slate-700">{myRecord?.clockIn ?? "—"}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-500">退勤</span>
+                  <span className="font-medium text-slate-700">{myRecord?.clockOut ?? "—"}</span>
+                </div>
+                <div className="flex justify-between text-sm border-t border-slate-100 pt-2">
+                  <span className="text-slate-500">実働時間</span>
+                  <span className="font-bold text-slate-800">
+                    {myRecord?.actualHours != null ? `${myRecord.actualHours.toFixed(1)}h` : "—"}
+                  </span>
+                </div>
+              </div>
+              {myRecord?.doneToday && (
+                <div className="rounded-md bg-slate-50 px-3 py-2">
+                  <p className="text-xs font-medium text-slate-500 mb-1">今日やったこと</p>
+                  <p className="text-sm text-slate-700 whitespace-pre-wrap">{myRecord.doneToday}</p>
+                </div>
+              )}
+              {myRecord?.todoTomorrow && (
+                <div className="rounded-md bg-blue-50 px-3 py-2">
+                  <p className="text-xs font-medium text-blue-600 mb-1">次回勤務日の予定</p>
+                  <p className="text-sm text-slate-700 whitespace-pre-wrap">{myRecord.todoTomorrow}</p>
+                </div>
               )}
               <div className="flex justify-center">
                 <Link href="/attendance/list" className="text-xs text-blue-600 hover:underline">勤怠一覧を見る →</Link>

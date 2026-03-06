@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import useSWR from "swr";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Users, FolderOpen, Monitor, Building2 } from "lucide-react";
@@ -374,12 +374,9 @@ export default function CalendarPage() {
   const [anchor,        setAnchor]        = useState(() => new Date());
   const [displayYear,   setDisplayYear]   = useState(() => new Date().getFullYear());
   const [displayMonth,  setDisplayMonth]  = useState(() => new Date().getMonth() + 1);
-  // 初期は全員選択（従来の挙動に戻す）
-  const [selectedIds,   setSelectedIds]   = useState<Set<string>>(
-    () => new Set()
-  );
+  // null = 全員表示（APIに memberIds を送らない）、Set = 明示的な絞り込み
+  const [selectedIds,   setSelectedIds]   = useState<Set<string> | null>(null);
   const [selectedProjId, setSelectedProjId] = useState<string>("");
-  const initialized = useRef(false);
 
   const weekDays  = buildWeekDays(anchor);
   const monthGrid = buildMonthGrid(displayYear, displayMonth);
@@ -387,42 +384,45 @@ export default function CalendarPage() {
   const from = view === "week" ? weekDays[0].date : monthGrid[0][0].date;
   const to   = view === "week" ? weekDays[6].date : monthGrid[monthGrid.length - 1][6].date;
 
-  const memberIdsParam = selectedIds.size > 0 ? Array.from(selectedIds).join(",") : "";
+  // null（全員）の場合は memberIds を送らない → API が全員返す
+  const memberIdsParam = selectedIds !== null ? Array.from(selectedIds).join(",") : "";
   const calUrl = `/api/calendar?from=${from}&to=${to}${memberIdsParam ? `&memberIds=${memberIdsParam}` : ""}`;
 
   const { data: calData = { members: [], schedules: [], attendances: [], projects: [] }, isLoading: loading } = useSWR<CalData>(calUrl);
-
-  useEffect(() => {
-    if (!initialized.current && calData.members.length > 0) {
-      if (selectedIds.size === 0) {
-        setSelectedIds(new Set(calData.members.map((m) => m.id)));
-      }
-      initialized.current = true;
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [calData.members]);
 
   // プロジェクトフィルター適用後の表示メンバー
   const projectFilteredMembers = selectedProjId
     ? calData.members.filter(m => m.projectIds.includes(selectedProjId))
     : calData.members;
 
-  const visibleMembers = projectFilteredMembers.filter(m => selectedIds.has(m.id));
+  // null = 全員表示、Set = 絞り込み表示
+  const visibleMembers = selectedIds === null
+    ? projectFilteredMembers
+    : projectFilteredMembers.filter(m => selectedIds.has(m.id));
 
   function toggleMember(id: string) {
-    setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+    setSelectedIds(prev => {
+      // null = 全員選択中 → 1人を外す = 他全員を選択
+      const base = prev ?? new Set(calData.members.map(m => m.id));
+      const s = new Set(base);
+      s.has(id) ? s.delete(id) : s.add(id);
+      // 全員選択になったら null（=APIフィルタなし）に戻す
+      if (calData.members.length > 0 && s.size === calData.members.length &&
+          calData.members.every(m => s.has(m.id))) return null;
+      return s;
+    });
   }
-  function selectAll()   { setSelectedIds(new Set(projectFilteredMembers.map(m => m.id))); }
+  function selectAll()   { setSelectedIds(null); }  // null = 全員・APIフィルタなし
   function deselectAll() { setSelectedIds(new Set()); }
 
   function handleProjectFilter(projId: string) {
     setSelectedProjId(projId);
-    // プロジェクト選択時はそのプロジェクトのメンバーだけ選択
     if (projId) {
       const projMembers = calData.members.filter(m => m.projectIds.includes(projId));
       setSelectedIds(new Set(projMembers.map(m => m.id)));
     } else {
-      setSelectedIds(new Set(isAdmin ? calData.members.map(m => m.id) : (myMemberId ? [myMemberId] : [])));
+      // 全体に戻す → null（全員）
+      setSelectedIds(isAdmin ? null : (myMemberId ? new Set([myMemberId]) : new Set()));
     }
   }
 
@@ -542,7 +542,7 @@ export default function CalendarPage() {
           </div>
           {projectFilteredMembers.map((m, gi) => {
             const color = COLORS[calData.members.findIndex(cm => cm.id === m.id) % COLORS.length];
-            const on    = selectedIds.has(m.id);
+            const on    = selectedIds === null || selectedIds.has(m.id);
             return (
               <button key={m.id} onClick={() => toggleMember(m.id)}
                 className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium border transition-all ${

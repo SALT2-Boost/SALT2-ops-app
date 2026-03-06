@@ -35,41 +35,41 @@ export async function GET(req: NextRequest) {
     orderBy: { name: "asc" },
   });
 
-  // 月の全勤怠記録
-  const attendances = await prisma.attendance.findMany({
-    where: {
-      date: { gte: monthStart, lte: monthEnd },
-      memberId: { in: members.map((m) => m.id) },
-    },
-    select: {
-      memberId: true,
-      date: true,
-      clockIn: true,
-      clockOut: true,
-      workMinutes: true,
-      confirmStatus: true,
-      slackNotified: true,
-    },
-  });
+  const memberIds = members.map((m) => m.id);
 
-  // 月の全勤務予定（欠勤判定用）
-  const schedules = await prisma.workSchedule.findMany({
-    where: {
-      date: { gte: monthStart, lte: monthEnd },
-      memberId: { in: members.map((m) => m.id) },
-      isOff: false,
-    },
-    select: { memberId: true, date: true },
-  });
-
-  // 請求書情報
-  const invoices = await prisma.invoice.findMany({
-    where: {
-      targetMonth: month,
-      memberId: { in: members.map((m) => m.id) },
-    },
-    select: { memberId: true, amountExclTax: true, workHoursTotal: true, unitPrice: true, status: true, invoiceNumber: true },
-  });
+  // 月の全勤怠・勤務予定・請求書を並列取得
+  const [attendances, schedules, invoices] = await Promise.all([
+    prisma.attendance.findMany({
+      where: {
+        date: { gte: monthStart, lte: monthEnd },
+        memberId: { in: memberIds },
+      },
+      select: {
+        memberId: true,
+        date: true,
+        clockIn: true,
+        clockOut: true,
+        workMinutes: true,
+        confirmStatus: true,
+        slackNotified: true,
+      },
+    }),
+    prisma.workSchedule.findMany({
+      where: {
+        date: { gte: monthStart, lte: monthEnd },
+        memberId: { in: memberIds },
+        isOff: false,
+      },
+      select: { memberId: true, date: true },
+    }),
+    prisma.invoice.findMany({
+      where: {
+        targetMonth: month,
+        memberId: { in: memberIds },
+      },
+      select: { memberId: true, amountExclTax: true, workHoursTotal: true, unitPrice: true, status: true, invoiceNumber: true },
+    }),
+  ]);
 
   const result = members.map((m) => {
     const atts = attendances.filter((a) => a.memberId === m.id);
