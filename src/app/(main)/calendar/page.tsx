@@ -352,7 +352,7 @@ function MonthView({ grid, visible, calData }: {
   }, [attMap, schedMap]);
 
   const dayItemsMap = useMemo(() => {
-    const map = new Map<string, { member: CalMember; ev: ReturnType<typeof getEvent> }[]>();
+    const map = new Map<string, { member: CalMember; ev: NonNullable<ReturnType<typeof getEvent>> }[]>();
     for (const member of visible) {
       for (const week of grid) {
         for (const day of week) {
