@@ -92,6 +92,12 @@ export default function AttendancePage() {
     if (!todayPlan.trim()) { setClockInError("今日やることを入力してください"); return; }
     setClockInError("");
     setClockingIn(true);
+    const now = timeStr();
+    // 楽観的更新: ステータスを即座に working に変更
+    mutateToday(
+      { id: "temp", date: todayStr, clockIn: now, clockOut: null, breakMinutes: 0, actualHours: null, todoToday: todayPlan, doneToday: null, todoTomorrow: null, status: "working" },
+      { revalidate: false }
+    );
     try {
       const res = await fetch("/api/attendances/clock-in", {
         method: "POST",
@@ -99,9 +105,9 @@ export default function AttendancePage() {
         body: JSON.stringify({ date: todayStr, todoToday: todayPlan, locationType: locationTypeMap[workLocation] ?? "office" }),
       });
       if (res.ok) {
-        setActionLog((prev) => [`${timeStr()} 出勤しました（${workLocation}）`, ...prev]);
-        await mutateToday();
+        setActionLog((prev) => [`${now} 出勤しました（${workLocation}）`, ...prev]);
       }
+      await mutateToday();
     } finally {
       setClockingIn(false);
     }
@@ -109,6 +115,11 @@ export default function AttendancePage() {
 
   async function clockOut() {
     setClockingOut(true);
+    const now = timeStr();
+    // 楽観的更新: ステータスを即座に done に変更
+    if (myRecord) {
+      mutateToday({ ...myRecord, status: "done", clockOut: now }, { revalidate: false });
+    }
     try {
       const res = await fetch("/api/attendances/clock-out", {
         method: "POST",
@@ -123,9 +134,9 @@ export default function AttendancePage() {
       if (res.ok) {
         const data = await res.json();
         const hours = data.workMinutes != null ? (data.workMinutes / 60).toFixed(1) : "—";
-        setActionLog((prev) => [`${timeStr()} 退勤しました（実働 ${hours}h）`, ...prev]);
-        await mutateToday();
+        setActionLog((prev) => [`${now} 退勤しました（実働 ${hours}h）`, ...prev]);
       }
+      await mutateToday();
     } finally {
       setClockingOut(false);
     }
@@ -133,16 +144,18 @@ export default function AttendancePage() {
 
   async function handleApprove(id: string) {
     setApprovingId(id);
+    // 楽観的更新: 承認待ちリストから即座に除去
+    mutateCorrections(corrections.filter((c) => c.id !== id), { revalidate: false });
     const res = await fetch(`/api/attendances/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ confirmStatus: "confirmed" }),
     });
     if (res.ok) {
-      await mutateCorrections();
       setCorrToast("修正を承認しました");
       setTimeout(() => setCorrToast(null), 3000);
     }
+    await mutateCorrections();
     setApprovingId(null);
   }
 
