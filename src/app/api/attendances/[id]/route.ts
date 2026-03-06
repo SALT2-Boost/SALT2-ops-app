@@ -87,9 +87,13 @@ export async function PUT(req: NextRequest, { params }: Params) {
     : undefined;
   const newBreakMinutes = body.breakMinutes !== undefined ? Number(body.breakMinutes) : undefined;
 
-  // workMinutes 再計算
+  // 日またぎ対応: clockOut が clockIn より前なら翌日扱い（例: 出勤22:00 → 退勤04:00）
   const effectiveClockIn = newClockIn !== undefined ? newClockIn : attendance.clockIn;
-  const effectiveClockOut = newClockOut !== undefined ? newClockOut : attendance.clockOut;
+  let adjustedClockOut = newClockOut !== undefined ? newClockOut : attendance.clockOut;
+  if (effectiveClockIn && adjustedClockOut && adjustedClockOut <= effectiveClockIn) {
+    adjustedClockOut = new Date(adjustedClockOut.getTime() + 24 * 60 * 60 * 1000);
+  }
+  const effectiveClockOut = adjustedClockOut;
   const effectiveBreak = newBreakMinutes !== undefined ? newBreakMinutes : attendance.breakMinutes;
 
   let newWorkMinutes: number | undefined;
@@ -104,7 +108,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     where: { id },
     data: {
       ...(newClockIn !== undefined ? { clockIn: newClockIn } : {}),
-      ...(newClockOut !== undefined ? { clockOut: newClockOut } : {}),
+      ...(newClockOut !== undefined ? { clockOut: adjustedClockOut } : {}),
       ...(newBreakMinutes !== undefined ? { breakMinutes: newBreakMinutes } : {}),
       ...(newWorkMinutes !== undefined ? { workMinutes: newWorkMinutes } : {}),
       status: "modified",

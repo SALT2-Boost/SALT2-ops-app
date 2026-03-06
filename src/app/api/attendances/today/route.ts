@@ -29,7 +29,14 @@ export async function GET() {
       where: { memberId_date: { memberId: user.memberId, date: yesterday } },
     }),
   ]);
-  const attendance = todayRec ?? (prevRec?.clockIn && !prevRec.clockOut ? prevRec : null);
+  // 日またぎ対応:
+  //   - prevRec に clockIn があり clockOut がない → 昨日から継続勤務中
+  //   - prevRec の clockOut が JST今日の00:00以降 → 日またぎ退勤済み（例: 翌4時退勤）
+  const jstTodayMidnight = new Date(today.getTime() - 9 * 60 * 60 * 1000);
+  const prevDayActive =
+    prevRec?.clockIn &&
+    (!prevRec.clockOut || prevRec.clockOut >= jstTodayMidnight);
+  const attendance = todayRec ?? (prevDayActive ? prevRec : null);
 
   if (!attendance) {
     return NextResponse.json(null);

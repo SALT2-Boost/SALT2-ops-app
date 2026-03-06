@@ -140,7 +140,11 @@ export async function POST(req: NextRequest) {
   }
 
   const newClockIn = parseTimeOnDate(dateObj, clockIn ?? null);
-  const newClockOut = parseTimeOnDate(dateObj, clockOut ?? null);
+  // 日またぎ対応: clockOut が clockIn より前なら翌日扱い（例: 出勤22:00 → 退勤04:00）
+  let newClockOut = parseTimeOnDate(dateObj, clockOut ?? null);
+  if (newClockIn && newClockOut && newClockOut <= newClockIn) {
+    newClockOut = new Date(newClockOut.getTime() + 24 * 60 * 60 * 1000);
+  }
   const breaks = Math.max(0, Number(breakMinutes ?? 0));
 
   let workMinutes: number | undefined;
