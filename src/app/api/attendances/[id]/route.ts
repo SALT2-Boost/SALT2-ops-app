@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { type ConfirmStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
+import { recalcAttendanceSummary } from "@/lib/attendance-summary";
 
 function unauthorized() {
   return NextResponse.json({ error: { code: "UNAUTHORIZED", message: "ログインが必要です" } }, { status: 401 });
@@ -110,6 +111,8 @@ export async function PUT(req: NextRequest, { params }: Params) {
       confirmStatus: "unconfirmed",
     },
   });
+
+  await recalcAttendanceSummary(updated.memberId, updated.date.toISOString().slice(0, 7));
 
   function toTimeStr(dt: Date | null): string | null {
     if (!dt) return null;

@@ -37,79 +37,74 @@ export async function GET(req: NextRequest) {
 
   const memberIds = members.map((m) => m.id);
 
-  // 月の全勤怠・勤務予定・請求書を並列取得
-  const [attendances, schedules, invoices] = await Promise.all([
-    prisma.attendance.findMany({
+  // 月次サマリー・Slack通知数・承認数・勤務予定数・請求書を並列取得
+  // attendance の全行 scan を排除し、集計済みデータのみ取得する
+  const [summaries, notifiedStats, confirmedStats, scheduleCounts, invoices] = await Promise.all([
+    // MonthlyAttendanceSummary: workDays + totalMinutes（書き込み時に更新済み）
+    prisma.monthlyAttendanceSummary.findMany({
+      where: { targetMonth: month, memberId: { in: memberIds } },
+      select: { memberId: true, workDays: true, totalMinutes: true },
+    }),
+    // slackNotified 件数
+    prisma.attendance.groupBy({
+      by: ["memberId"],
       where: {
         date: { gte: monthStart, lte: monthEnd },
         memberId: { in: memberIds },
-      },
-      select: {
-        memberId: true,
-        date: true,
-        clockIn: true,
-        clockOut: true,
-        workMinutes: true,
-        confirmStatus: true,
         slackNotified: true,
       },
+      _count: { id: true },
     }),
-    prisma.workSchedule.findMany({
+    // 確認済み件数（approved or confirmed）
+    prisma.attendance.groupBy({
+      by: ["memberId"],
+      where: {
+        date: { gte: monthStart, lte: monthEnd },
+        memberId: { in: memberIds },
+        confirmStatus: { in: ["approved", "confirmed"] },
+      },
+      _count: { id: true },
+    }),
+    // 勤務予定の稼働日数（isOff=false の件数）— missingDays 計算用
+    prisma.workSchedule.groupBy({
+      by: ["memberId"],
       where: {
         date: { gte: monthStart, lte: monthEnd },
         memberId: { in: memberIds },
         isOff: false,
       },
-      select: { memberId: true, date: true },
+      _count: { id: true },
     }),
+    // 請求書
     prisma.invoice.findMany({
-      where: {
-        targetMonth: month,
-        memberId: { in: memberIds },
-      },
+      where: { targetMonth: month, memberId: { in: memberIds } },
       select: { memberId: true, amountExclTax: true, workHoursTotal: true, unitPrice: true, status: true, invoiceNumber: true },
     }),
   ]);
 
-  const attendancesByMember = new Map<string, typeof attendances>();
-  for (const a of attendances) {
-    const list = attendancesByMember.get(a.memberId) ?? [];
-    list.push(a);
-    attendancesByMember.set(a.memberId, list);
-  }
-
-  const schedulesByMember = new Map<string, typeof schedules>();
-  for (const s of schedules) {
-    const list = schedulesByMember.get(s.memberId) ?? [];
-    list.push(s);
-    schedulesByMember.set(s.memberId, list);
-  }
-
-  const invoiceByMember = new Map<string, typeof invoices[number]>();
-  for (const inv of invoices) {
-    if (!invoiceByMember.has(inv.memberId)) {
-      invoiceByMember.set(inv.memberId, inv);
-    }
-  }
+  // Map 化
+  const summaryMap = new Map(summaries.map((s) => [s.memberId, s]));
+  const notifiedMap = new Map(notifiedStats.map((s) => [s.memberId, s._count.id]));
+  const confirmedMap = new Map(confirmedStats.map((s) => [s.memberId, s._count.id]));
+  const scheduleCountMap = new Map(scheduleCounts.map((s) => [s.memberId, s._count.id]));
+  const invoiceByMember = new Map(invoices.map((inv) => [inv.memberId, inv]));
 
   const result = members.map((m) => {
-    const atts = attendancesByMember.get(m.id) ?? [];
-    const scheds = schedulesByMember.get(m.id) ?? [];
-
-    // 稼働日数 = clockIn がある日数
-    const workDays = atts.filter((a) => a.clockIn !== null).length;
-
-    // 合計実働時間（分 → 時間）
-    const totalMinutes = atts.reduce((s, a) => s + (a.workMinutes ?? 0), 0);
+    const summary = summaryMap.get(m.id);
+    const workDays = summary?.workDays ?? 0;
+    const totalMinutes = summary?.totalMinutes ?? 0;
     const totalHours = Math.round((totalMinutes / 60) * 10) / 10;
 
-    // 未打刻日 = 勤務予定があるが勤怠なし or clockIn null の日
-    const attDateSet = new Set(atts.filter((a) => a.clockIn).map((a) => a.date.toISOString().slice(0, 10)));
-    const missingDays = scheds.filter((s) => !attDateSet.has(s.date.toISOString().slice(0, 10))).length;
+    // 未打刻日 = 勤務予定稼働日数 - 実際の clockIn 日数
+    const scheduledDays = scheduleCountMap.get(m.id) ?? 0;
+    const missingDays = Math.max(0, scheduledDays - workDays);
+
+    const notifiedCount = notifiedMap.get(m.id) ?? 0;
+    const confirmedCount = confirmedMap.get(m.id) ?? 0;
 
     // 人件費見込み
-    let estimatedAmount = 0;
     const inv = invoiceByMember.get(m.id);
+    let estimatedAmount = 0;
     if (inv) {
       estimatedAmount = inv.amountExclTax;
     } else if (m.salaryType === "hourly") {
@@ -119,17 +114,9 @@ export async function GET(req: NextRequest) {
     }
 
     // 勤怠確認ステータス
-    // slackNotified=false → "not_sent"
-    // slackNotified=true, confirmStatus未確認 → "waiting"
-    // 全員approved/confirmed → "confirmed"
-    // slackNotified=true and forceApproved → "forced"
-    const notifiedCount = atts.filter((a) => a.slackNotified).length;
-    const confirmedCount = atts.filter((a) => a.confirmStatus === "approved" || a.confirmStatus === "confirmed").length;
-
     let confirmStatus: "not_sent" | "waiting" | "confirmed" | "forced";
     if (confirmedCount >= workDays && workDays > 0) {
-      // 全て確認済み（slackNotifiedがなければforced判定はできないので簡易にconfirmed）
-      confirmStatus = notifiedCount > 0 ? "confirmed" : "confirmed";
+      confirmStatus = "confirmed";
     } else if (notifiedCount > 0) {
       confirmStatus = "waiting";
     } else {

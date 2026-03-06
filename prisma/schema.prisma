@@ -151,16 +151,17 @@ model Member {
   updatedAt         DateTime     @updatedAt @map("updated_at")
 
   // Relations
-  userAccount          UserAccount?
-  skills               MemberSkill[]
-  assignments          ProjectAssignment[]
-  workSchedules        WorkSchedule[]
-  attendances          Attendance[]
-  invoices             Invoice[]
-  tools                MemberTool[]
-  contracts            MemberContract[]
-  selfReports          MonthlySelfReport[]
-  personnelEvaluations PersonnelEvaluation[]
+  userAccount           UserAccount?
+  skills                MemberSkill[]
+  assignments           ProjectAssignment[]
+  workSchedules         WorkSchedule[]
+  attendances           Attendance[]
+  invoices              Invoice[]
+  tools                 MemberTool[]
+  contracts             MemberContract[]
+  selfReports           MonthlySelfReport[]
+  personnelEvaluations  PersonnelEvaluation[]
+  attendanceSummaries   MonthlyAttendanceSummary[]
 
   @@index([deletedAt])
   @@index([leftAt])
@@ -620,4 +621,22 @@ model PersonnelEvaluation {
   @@index([memberId, targetPeriod(sort: Desc)])
   @@index([evaluatorId])
   @@map("personnel_evaluations")
+}
+
+// ─────────────────────────────────────────────
+// 20. monthly_attendance_summaries（月次勤怠サマリー・非正規化）
+// 勤怠書き込み時に更新。closing/notifyはこのテーブルを読む。
+// ─────────────────────────────────────────────
+model MonthlyAttendanceSummary {
+  memberId     String @map("member_id")
+  targetMonth  String @map("target_month") @db.Char(7) // 'YYYY-MM'
+  workDays     Int    @default(0) @map("work_days")    // clockIn非Nullの日数
+  totalMinutes Int    @default(0) @map("total_minutes") // SUM(workMinutes)
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  member Member @relation(fields: [memberId], references: [id])
+
+  @@id([memberId, targetMonth])
+  @@index([targetMonth])
+  @@map("monthly_attendance_summaries")
 }

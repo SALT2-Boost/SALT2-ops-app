@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
+import { recalcAttendanceSummary } from "@/lib/attendance-summary";
 
 function unauthorized() {
   return NextResponse.json({ error: { code: "UNAUTHORIZED", message: "ログインが必要です" } }, { status: 401 });
@@ -158,6 +159,8 @@ export async function POST(req: NextRequest) {
       confirmStatus: "unconfirmed",
     },
   });
+
+  await recalcAttendanceSummary(memberId, date.slice(0, 7));
 
   const actualHours = created.workMinutes != null
     ? Math.round((created.workMinutes / 60) * 10) / 10

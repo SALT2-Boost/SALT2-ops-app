@@ -61,7 +61,8 @@ export async function GET(req: Request) {
   } | null = null;
 
   if (isAdmin && !isLite) {
-    const [todayAttendances, allMembers, plRecords] = await Promise.all([
+    // PLサマリーは aggregate 3本で DB 側集計（全行転送→JS reduce を排除）
+    const [todayAttendances, allMembers, totalAgg, boostAgg, salt2Agg] = await Promise.all([
       // 今日の全メンバーの打刻（必要フィールドのみ）
       prisma.attendance.findMany({
         where: { date: today },
@@ -72,18 +73,25 @@ export async function GET(req: Request) {
         where: { deletedAt: null, leftAt: null },
         select: { id: true, name: true },
       }),
-      // PLサマリー（admin ロールのみ）
+      // PL 合計 / boost / salt2 を並列 aggregate
       user.role === "admin"
-        ? prisma.pLRecord.findMany({
+        ? prisma.pLRecord.aggregate({
             where: { targetMonth: currentMonth, recordType: "pl" },
-            select: {
-              revenueContract: true,
-              revenueExtra: true,
-              grossProfit: true,
-              project: { select: { company: true } },
-            },
+            _sum: { revenueContract: true, revenueExtra: true, grossProfit: true },
           })
-        : Promise.resolve([] as { revenueContract: number; revenueExtra: number; grossProfit: number; project: { company: string } | null }[]),
+        : Promise.resolve(null),
+      user.role === "admin"
+        ? prisma.pLRecord.aggregate({
+            where: { targetMonth: currentMonth, recordType: "pl", project: { company: "boost" } },
+            _sum: { revenueContract: true, revenueExtra: true, grossProfit: true },
+          })
+        : Promise.resolve(null),
+      user.role === "admin"
+        ? prisma.pLRecord.aggregate({
+            where: { targetMonth: currentMonth, recordType: "pl", project: { company: "salt2" } },
+            _sum: { revenueContract: true, revenueExtra: true, grossProfit: true },
+          })
+        : Promise.resolve(null),
     ]);
 
     const attendanceByMember = new Map(
@@ -104,19 +112,17 @@ export async function GET(req: Request) {
       };
     });
 
-    if (user.role === "admin" && plRecords.length > 0) {
-      const totalRevenue = plRecords.reduce((s, r) => s + r.revenueContract + r.revenueExtra, 0);
-      const totalGrossProfit = plRecords.reduce((s, r) => s + r.grossProfit, 0);
-      const boostPL = plRecords.filter((r) => r.project?.company === "boost");
-      const salt2PL = plRecords.filter((r) => r.project?.company === "salt2");
-      plSummary = {
-        totalRevenue,
-        totalGrossProfit,
-        boostRevenue: boostPL.reduce((s, r) => s + r.revenueContract + r.revenueExtra, 0),
-        salt2Revenue: salt2PL.reduce((s, r) => s + r.revenueContract + r.revenueExtra, 0),
-        boostGrossProfit: boostPL.reduce((s, r) => s + r.grossProfit, 0),
-        salt2GrossProfit: salt2PL.reduce((s, r) => s + r.grossProfit, 0),
-      };
+    if (user.role === "admin" && totalAgg) {
+      const totalRevenue = (totalAgg._sum.revenueContract ?? 0) + (totalAgg._sum.revenueExtra ?? 0);
+      if (totalRevenue > 0 || (totalAgg._sum.grossProfit ?? 0) > 0) {
+        plSummary = {
+          totalRevenue,
+          totalGrossProfit: totalAgg._sum.grossProfit ?? 0,
+          boostRevenue: (boostAgg!._sum.revenueContract ?? 0) + (boostAgg!._sum.revenueExtra ?? 0),
+          salt2Revenue: (salt2Agg!._sum.revenueContract ?? 0) + (salt2Agg!._sum.revenueExtra ?? 0),
+          boostGrossProfit: boostAgg!._sum.grossProfit ?? 0,
+          salt2GrossProfit: salt2Agg!._sum.grossProfit ?? 0,
+        };
     }
   }
 

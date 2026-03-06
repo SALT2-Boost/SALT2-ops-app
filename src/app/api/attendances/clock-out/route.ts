@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
 import { sendSlack, getSlackMention } from "@/lib/slack";
+import { recalcAttendanceSummary } from "@/lib/attendance-summary";
 
 function unauthorized() {
   return NextResponse.json({ error: { code: "UNAUTHORIZED", message: "ログインが必要です" } }, { status: 401 });
@@ -63,7 +64,10 @@ export async function POST(req: NextRequest) {
   lines.push(`• 休憩時間: ${breakMinutes}分`);
   if (doneToday) lines.push(`• 日報: ${doneToday}`);
   if (todoTomorrow) lines.push(`• 次回勤務日にやること: ${todoTomorrow}`);
-  await sendSlack(lines.join("\n"), "attendance");
+  await Promise.all([
+    sendSlack(lines.join("\n"), "attendance"),
+    recalcAttendanceSummary(user.memberId, date.slice(0, 7)),
+  ]);
 
   return NextResponse.json({
     id: updated.id,

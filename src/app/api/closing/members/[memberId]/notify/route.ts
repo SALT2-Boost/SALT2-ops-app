@@ -22,21 +22,21 @@ export async function PATCH(
   const monthStart = new Date(year, mon - 1, 1);
   const monthEnd = new Date(year, mon, 0, 23, 59, 59, 999);
 
-  const [member, attendances] = await Promise.all([
+  // サマリーとメンバー情報を並列取得（attendance 全行 scan を排除）
+  const [member, summary, scheduledDays] = await Promise.all([
     prisma.member.findUnique({
       where: { id: params.memberId },
       select: { name: true, userAccount: { select: { email: true } } },
     }),
-    prisma.attendance.findMany({
+    prisma.monthlyAttendanceSummary.findUnique({
+      where: { memberId_targetMonth: { memberId: params.memberId, targetMonth: month } },
+      select: { workDays: true, totalMinutes: true },
+    }),
+    prisma.workSchedule.count({
       where: {
         memberId: params.memberId,
         date: { gte: monthStart, lte: monthEnd },
-      },
-      select: {
-        clockIn: true,
-        clockOut: true,
-        workMinutes: true,
-        status: true,
+        isOff: false,
       },
     }),
   ]);
@@ -45,12 +45,9 @@ export async function PATCH(
     return NextResponse.json({ error: "メンバーが見つかりません" }, { status: 404 });
   }
 
-  const workingDays = attendances.filter((a) => a.status !== "absent").length;
-  const totalMinutes = attendances.reduce((sum, a) => sum + (a.workMinutes ?? 0), 0);
-  const totalHours = (totalMinutes / 60).toFixed(1);
-  const missingDays = attendances.filter(
-    (a) => a.status !== "absent" && (!a.clockIn || !a.clockOut)
-  ).length;
+  const workingDays = summary?.workDays ?? 0;
+  const totalHours = ((summary?.totalMinutes ?? 0) / 60).toFixed(1);
+  const missingDays = Math.max(0, scheduledDays - workingDays);
 
   const yearStr = String(year);
   const monStr = String(mon).padStart(2, "0");
