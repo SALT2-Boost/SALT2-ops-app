@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "@/components/ui/app-link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -89,15 +88,14 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             {/* モバイル: 非ハブページにいる admin/manager 向け戻るリンク */}
             {showBackLink && (
               <li className="md:hidden">
-                <Link
+                <a
                   href="/dashboard"
-                  prefetch={false}
                   onClick={onClose}
                   className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
                 >
                   <ChevronLeft size={16} />
                   ダッシュボードに戻る
-                </Link>
+                </a>
               </li>
             )}
             {navItems.map((item) => {
@@ -107,8 +105,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                   : pathname.startsWith(item.href);
               return (
                 <li key={item.href}>
-                  <Link
-                    prefetch={false}
+                  <a
                     href={item.href}
                     onClick={onClose}
                     className={cn(
@@ -120,7 +117,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                   >
                     <item.icon size={16} />
                     {item.label}
-                  </Link>
+                  </a>
                 </li>
               );
             })}

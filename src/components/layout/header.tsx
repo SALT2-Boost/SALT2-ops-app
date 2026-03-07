@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "@/components/ui/app-link";
 import { usePathname, useRouter } from "next/navigation";
 import { LogOut, User, Menu, ChevronLeft } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
@@ -41,13 +40,13 @@ export function Header({ onMenuClick }: HeaderProps) {
 
         {/* ダッシュボードへ戻るボタン（admin/manager のみ、ハブページ以外で表示） */}
         {showBackButton && (
-          <Link
+          <a
             href="/dashboard"
             className="hidden md:flex items-center gap-1 rounded-md px-2 py-1.5 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
           >
             <ChevronLeft size={16} />
             ダッシュボード
-          </Link>
+          </a>
         )}
       </div>
 

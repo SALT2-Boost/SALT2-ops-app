@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "@/components/ui/app-link";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -42,9 +41,8 @@ const MEMBERS: NavItem[] = [
 
 function NavCard({ label, href, icon: Icon, description }: NavItem) {
   return (
-    <Link
+    <a
       href={href}
-      prefetch={false}
       className="group flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 transition-all hover:border-blue-300 hover:bg-blue-50 hover:shadow-sm"
     >
       <div className="flex items-center gap-3">
@@ -57,7 +55,7 @@ function NavCard({ label, href, icon: Icon, description }: NavItem) {
         </div>
       </div>
       <ArrowRight size={14} className="text-slate-300 group-hover:text-blue-400 transition-colors" />
-    </Link>
+    </a>
   );
 }
 
