@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import useSWR from "swr";
-import Link from "@/components/ui/app-link";
 import { FolderOpen, Users, Calendar, ArrowRight, Plus } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +57,79 @@ function formatCurrency(n: number): string {
   return n.toLocaleString("ja-JP", { style: "currency", currency: "JPY" });
 }
 
+// ─── ProjectCard (memo) ──────────────────────────────────
+
+const ProjectCard = memo(function ProjectCard({ project }: { project: Project }) {
+  return (
+    <Card>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3 min-w-0">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50">
+            <FolderOpen size={18} className="text-blue-600" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="font-semibold text-slate-800">{project.name}</h2>
+              <Badge variant={project.company === "boost" ? "boost" : "salt2"}>
+                {companyDisplay(project.company)}
+              </Badge>
+              <Badge variant={statusColor[project.status] ?? "default"}>
+                {STATUS_LABELS[project.status] ?? project.status}
+              </Badge>
+            </div>
+            {project.description && (
+              <p className="mt-2 text-sm text-slate-600">{project.description}</p>
+            )}
+          </div>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-xs text-slate-400">月額契約</p>
+          <p className="text-base font-bold text-slate-800">{formatCurrency(project.monthlyContractAmount)}</p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-3">
+        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+          <Calendar size={13} />
+          開始: {formatDate(project.startDate)}
+        </div>
+        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+          <Users size={13} />
+          {project.assignments.length}名アサイン
+        </div>
+        {project.clientName && (
+          <div className="text-xs text-slate-500">クライアント: {project.clientName}</div>
+        )}
+      </div>
+
+      {project.assignments.length > 0 && (
+        <div className="mt-3 space-y-1.5">
+          <p className="text-xs font-semibold text-slate-500">アサインメンバー</p>
+          <div className="flex flex-wrap gap-2">
+            {project.assignments.map((a) => (
+              <div key={a.id} className="flex items-center gap-1.5 rounded-md bg-slate-50 px-2 py-1 text-xs">
+                <a href={`/members/${a.memberId}`} className="font-medium text-slate-700 hover:text-blue-600">
+                  {a.memberName}
+                </a>
+                <span className="text-slate-400">|</span>
+                <span className="text-slate-500">{a.positionName}</span>
+                <span className="text-slate-400">|</span>
+                <span className="text-blue-600">{a.workloadHours}h/月</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-3 flex justify-end border-t border-slate-100 pt-3">
+        <a href={`/projects/${project.id}`} className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800">
+          詳細を見る <ArrowRight size={13} />
+        </a>
+      </div>
+    </Card>
+  );
+});
+
 // ─── クライアントコンポーネント ───────────────────────────
 
 interface ProjectsClientProps {
@@ -85,9 +157,9 @@ export default function ProjectsClient({ role }: ProjectsClientProps) {
           <p className="text-sm text-slate-500">{projects.length}件</p>
         </div>
         {canCreate && (
-          <Link href="/projects/new" className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">
+          <a href="/projects/new" className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">
             <Plus size={15} /> 新規登録
-          </Link>
+          </a>
         )}
       </div>
 
@@ -121,72 +193,7 @@ export default function ProjectsClient({ role }: ProjectsClientProps) {
       ) : (
         <div className="space-y-4">
           {projects.map((project) => (
-            <Card key={project.id}>
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-start gap-3 min-w-0">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50">
-                    <FolderOpen size={18} className="text-blue-600" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="font-semibold text-slate-800">{project.name}</h2>
-                      <Badge variant={project.company === "boost" ? "boost" : "salt2"}>
-                        {companyDisplay(project.company)}
-                      </Badge>
-                      <Badge variant={statusColor[project.status] ?? "default"}>
-                        {STATUS_LABELS[project.status] ?? project.status}
-                      </Badge>
-                    </div>
-                    {project.description && (
-                      <p className="mt-2 text-sm text-slate-600">{project.description}</p>
-                    )}
-                  </div>
-                </div>
-                <div className="shrink-0 text-right">
-                  <p className="text-xs text-slate-400">月額契約</p>
-                  <p className="text-base font-bold text-slate-800">{formatCurrency(project.monthlyContractAmount)}</p>
-                </div>
-              </div>
-
-              <div className="mt-4 grid grid-cols-2 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-3">
-                <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                  <Calendar size={13} />
-                  開始: {formatDate(project.startDate)}
-                </div>
-                <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                  <Users size={13} />
-                  {project.assignments.length}名アサイン
-                </div>
-                {project.clientName && (
-                  <div className="text-xs text-slate-500">クライアント: {project.clientName}</div>
-                )}
-              </div>
-
-              {project.assignments.length > 0 && (
-                <div className="mt-3 space-y-1.5">
-                  <p className="text-xs font-semibold text-slate-500">アサインメンバー</p>
-                  <div className="flex flex-wrap gap-2">
-                    {project.assignments.map((a) => (
-                      <div key={a.id} className="flex items-center gap-1.5 rounded-md bg-slate-50 px-2 py-1 text-xs">
-                        <Link href={`/members/${a.memberId}`} className="font-medium text-slate-700 hover:text-blue-600">
-                          {a.memberName}
-                        </Link>
-                        <span className="text-slate-400">|</span>
-                        <span className="text-slate-500">{a.positionName}</span>
-                        <span className="text-slate-400">|</span>
-                        <span className="text-blue-600">{a.workloadHours}h/月</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-3 flex justify-end border-t border-slate-100 pt-3">
-                <Link href={`/projects/${project.id}`} className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800">
-                  詳細を見る <ArrowRight size={13} />
-                </Link>
-              </div>
-            </Card>
+            <ProjectCard key={project.id} project={project} />
           ))}
 
           {projects.length === 0 && (

@@ -83,7 +83,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto py-3">
+        <nav className="flex-1 overflow-y-auto py-3" suppressHydrationWarning>
           <ul className="space-y-0.5 px-2">
             {/* モバイル: 非ハブページにいる admin/manager 向け戻るリンク */}
             {showBackLink && (

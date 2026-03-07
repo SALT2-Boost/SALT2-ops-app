@@ -56,7 +56,7 @@ export function Header({ onMenuClick }: HeaderProps) {
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700">
             <User size={14} />
           </div>
-          <span className="hidden text-sm font-medium text-slate-700 sm:inline">
+          <span className="hidden text-sm font-medium text-slate-700 sm:inline" suppressHydrationWarning>
             {name ?? "ゲスト"}
           </span>
         </div>
