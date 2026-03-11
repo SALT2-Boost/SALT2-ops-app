@@ -782,6 +782,15 @@ interface SelfReportItem {
   submittedAt: string | null;
 }
 
+// プロジェクト外の定型選択肢
+const NON_PROJECT_OPTIONS = [
+  "社内業務",
+  "研修・勉強会",
+  "採用・面接",
+  "有給・休暇",
+  "その他",
+];
+
 function SelfReportCard({
   month,
   myProjects,
@@ -792,13 +801,14 @@ function SelfReportCard({
   const { data: selfReports, mutate: mutateSR } = useSWR<SelfReportItem[]>(
     month ? `/api/self-reports?month=${month}` : null
   );
+  const { data: allProjectsRaw } = useSWR<{ id: string; name: string }[]>(
+    "/api/projects"
+  );
+  const allProjects = allProjectsRaw ?? [];
 
   const [rows, setRows] = useState<SelfReportRow[]>([]);
   const [editing, setEditing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [customInput, setCustomInput] = useState("");
-  const [showCustom, setShowCustom] = useState(false);
-  const [showProjectPicker, setShowProjectPicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const submitted = selfReports && selfReports.length > 0 && selfReports.every((r) => r.submittedAt);
@@ -833,6 +843,10 @@ function SelfReportCard({
   const totalPercent = rows.reduce((s, r) => s + r.reportedPercent, 0);
   const isValid = totalPercent === 100;
 
+  // 既に選択済みの projectId / customLabel
+  const usedProjectIds = new Set(rows.map((r) => r.projectId).filter(Boolean));
+  const usedCustomLabels = new Set(rows.map((r) => r.customLabel).filter(Boolean));
+
   function updatePercent(key: string, value: number) {
     setRows((prev) => prev.map((r) => r.key === key ? { ...r, reportedPercent: value } : r));
   }
@@ -841,33 +855,45 @@ function SelfReportCard({
     setRows((prev) => prev.filter((r) => r.key !== key));
   }
 
-  function addProject(projectId: string) {
-    const pj = myProjects.find((p) => p.projectId === projectId);
-    if (!pj) return;
-    setRows((prev) => [
-      ...prev,
-      { key: projectId, projectId, customLabel: null, displayName: pj.projectName, reportedPercent: 0 },
-    ]);
-    setShowProjectPicker(false);
+  function handleSelectChange(key: string, value: string) {
+    if (!value) return;
+    // value format: "project:<id>" or "custom:<label>"
+    if (value.startsWith("project:")) {
+      const projectId = value.slice(8);
+      const pj = allProjects.find((p) => p.id === projectId);
+      setRows((prev) => prev.map((r) =>
+        r.key === key ? { ...r, projectId, customLabel: null, displayName: pj?.name ?? projectId } : r
+      ));
+    } else if (value.startsWith("custom:")) {
+      const label = value.slice(7);
+      setRows((prev) => prev.map((r) =>
+        r.key === key ? { ...r, projectId: null, customLabel: label, displayName: label } : r
+      ));
+    }
   }
 
-  function addCustomLabel() {
-    const label = customInput.trim();
-    if (!label) return;
-    if (rows.some((r) => r.customLabel === label)) {
-      setError("同名のカスタム項目が既にあります");
-      return;
-    }
+  function addRow() {
+    const key = `new-${Date.now()}`;
     setRows((prev) => [
       ...prev,
-      { key: `custom-${label}`, projectId: null, customLabel: label, displayName: label, reportedPercent: 0 },
+      { key, projectId: null, customLabel: null, displayName: "", reportedPercent: 0 },
     ]);
-    setCustomInput("");
-    setShowCustom(false);
-    setError(null);
+  }
+
+  // 行の選択肢を構築（その行自身の選択は除外しない）
+  function getSelectValue(row: SelfReportRow): string {
+    if (row.projectId) return `project:${row.projectId}`;
+    if (row.customLabel) return `custom:${row.customLabel}`;
+    return "";
   }
 
   async function handleSubmit() {
+    // 未選択の行がないかチェック
+    const emptyRow = rows.find((r) => !r.projectId && !r.customLabel);
+    if (emptyRow) {
+      setError("項目が未選択の行があります");
+      return;
+    }
     if (!isValid) return;
     setSubmitting(true);
     setError(null);
@@ -892,10 +918,6 @@ function SelfReportCard({
     }
     setSubmitting(false);
   }
-
-  const availableProjects = myProjects.filter(
-    (p) => !rows.some((r) => r.projectId === p.projectId)
-  );
 
   if (!month) return null;
 
@@ -955,7 +977,37 @@ function SelfReportCard({
             <tbody>
               {rows.map((r) => (
                 <tr key={r.key} className="border-b border-slate-50">
-                  <td className="py-2 text-slate-700">{r.displayName}</td>
+                  <td className="py-2">
+                    <select
+                      value={getSelectValue(r)}
+                      onChange={(e) => handleSelectChange(r.key, e.target.value)}
+                      className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
+                    >
+                      <option value="">選択してください</option>
+                      <optgroup label="プロジェクト">
+                        {allProjects.map((p) => (
+                          <option
+                            key={p.id}
+                            value={`project:${p.id}`}
+                            disabled={usedProjectIds.has(p.id) && r.projectId !== p.id}
+                          >
+                            {p.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="プロジェクト外">
+                        {NON_PROJECT_OPTIONS.map((label) => (
+                          <option
+                            key={label}
+                            value={`custom:${label}`}
+                            disabled={usedCustomLabels.has(label) && r.customLabel !== label}
+                          >
+                            {label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    </select>
+                  </td>
                   <td className="py-2 text-right">
                     <input
                       type="number"
@@ -980,59 +1032,12 @@ function SelfReportCard({
             </tbody>
           </table>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {availableProjects.length > 0 && (
-              showProjectPicker ? (
-                <select
-                  value=""
-                  onChange={(e) => { if (e.target.value) addProject(e.target.value); }}
-                  className="rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
-                  autoFocus
-                  onBlur={() => setShowProjectPicker(false)}
-                >
-                  <option value="">プロジェクトを選択...</option>
-                  {availableProjects.map((p) => (
-                    <option key={p.projectId} value={p.projectId}>{p.projectName}</option>
-                  ))}
-                </select>
-              ) : (
-                <button
-                  onClick={() => setShowProjectPicker(true)}
-                  className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800"
-                >
-                  <Plus size={14} /> プロジェクト追加
-                </button>
-              )
-            )}
-
-            {showCustom ? (
-              <div className="flex items-center gap-1">
-                <input
-                  type="text"
-                  value={customInput}
-                  onChange={(e) => setCustomInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") addCustomLabel(); }}
-                  placeholder="例: 社内業務"
-                  className="w-32 rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
-                  autoFocus
-                />
-                <Button size="sm" variant="outline" onClick={addCustomLabel}>追加</Button>
-                <button
-                  onClick={() => { setShowCustom(false); setCustomInput(""); }}
-                  className="text-xs text-slate-400 hover:text-slate-600"
-                >
-                  取消
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowCustom(true)}
-                className="flex items-center gap-1 text-sm text-emerald-600 hover:text-emerald-800"
-              >
-                <Plus size={14} /> カスタム追加
-              </button>
-            )}
-          </div>
+          <button
+            onClick={addRow}
+            className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800"
+          >
+            <Plus size={14} /> 行を追加
+          </button>
 
           <div className="flex items-center justify-between pt-2">
             <span className="text-sm text-slate-600">
