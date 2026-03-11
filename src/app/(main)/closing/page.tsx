@@ -114,6 +114,8 @@ function AdminClosingView() {
   const { data: records = [], isLoading: closingLoading, mutate: mutateClosing } = useSWR<ClosingRecord[]>(targetMonth ? `/api/closing?month=${targetMonth}` : null);
   const { data: invoices = [], isLoading: invoicesLoading, mutate: mutateInvoices } = useSWR<Invoice[]>(targetMonth ? `/api/invoices?month=${targetMonth}` : null);
   const { data: selfReportSummary = [] } = useSWR<{ memberId: string; submitted: boolean }[]>(targetMonth ? `/api/self-reports?month=${targetMonth}` : null);
+  const { data: mypageData } = useSWR<{ projects?: MyProject[] }>("/api/mypage");
+  const myProjects: MyProject[] = mypageData?.projects ?? [];
   const loading = closingLoading || invoicesLoading;
 
   const selfReportMap = useMemo(
@@ -319,6 +321,9 @@ function AdminClosingView() {
           </Button>
         )}
       </div>
+
+      {/* 自分の月次申告 */}
+      <SelfReportCard month={targetMonth} myProjects={myProjects} />
 
       {/* 請求書受領状況テーブル */}
       {loading ? (
