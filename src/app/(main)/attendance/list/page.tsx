@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import useSWR from "swr";
 import Link from "@/components/ui/app-link";
-import { ArrowLeft, Download, CheckCircle, XCircle, Plus } from "lucide-react";
+import { ArrowLeft, Download, CheckCircle, XCircle, Plus, Pencil } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -109,6 +109,44 @@ export default function AttendanceListPage() {
       setRejectedIds((prev) => new Set(Array.from(prev).concat(id)));
       setApprovedIds((prev) => { const s = new Set(prev); s.delete(id); return s; });
       await mutateRecords();
+    }
+  }
+
+  // 行編集
+  const [editForm, setEditForm] = useState<{
+    id: string; clockIn: string; clockOut: string; breakMinutes: string; submitting: boolean; error: string;
+  } | null>(null);
+
+  function startEdit(rec: AttendanceRecord) {
+    setEditForm({
+      id: rec.id,
+      clockIn: rec.clockIn ?? "",
+      clockOut: rec.clockOut ?? "",
+      breakMinutes: String(rec.breakMinutes),
+      submitting: false,
+      error: "",
+    });
+  }
+
+  async function handleEditSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editForm) return;
+    setEditForm((f) => f && { ...f, submitting: true, error: "" });
+    const res = await fetch(`/api/attendances/${editForm.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clockIn: editForm.clockIn || null,
+        clockOut: editForm.clockOut || null,
+        breakMinutes: Number(editForm.breakMinutes),
+      }),
+    });
+    if (res.ok) {
+      setEditForm(null);
+      await mutateRecords();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setEditForm((f) => f && { ...f, submitting: false, error: data?.error?.message ?? "修正に失敗しました" });
     }
   }
 
@@ -296,7 +334,7 @@ export default function AttendanceListPage() {
                   <th className="px-4 py-2.5 text-right font-medium">実働</th>
                   <th className="px-4 py-2.5 text-left font-medium">状態</th>
                   <th className="px-4 py-2.5 text-left font-medium">今日やったこと</th>
-                  {isAdmin && <th className="px-4 py-2.5 text-left font-medium">操作</th>}
+                  <th className="px-4 py-2.5 text-left font-medium">操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -304,6 +342,46 @@ export default function AttendanceListPage() {
                   const approved = approvedIds.has(rec.id) || rec.confirmStatus === "approved";
                   const rejected = rejectedIds.has(rec.id) || rec.confirmStatus === "rejected";
                   const isToday = rec.date === jstToday;
+                  const isEditing = editForm?.id === rec.id;
+
+                  if (isEditing) {
+                    return (
+                      <tr key={rec.id} className="border-b border-slate-50 bg-amber-50">
+                        <td className="px-4 py-2 text-slate-700">
+                          {rec.date.slice(5).replace("-", "/")}
+                          {isToday && <span className="ml-1 text-xs text-blue-600">今日</span>}
+                        </td>
+                        <td className="px-4 py-1.5">
+                          <input type="time" value={editForm.clockIn} onChange={(e) => setEditForm((f) => f && { ...f, clockIn: e.target.value })} className="w-24 rounded border border-slate-300 px-1.5 py-1 text-sm focus:border-blue-500 focus:outline-none" />
+                        </td>
+                        <td className="px-4 py-1.5">
+                          <input type="time" value={editForm.clockOut} onChange={(e) => setEditForm((f) => f && { ...f, clockOut: e.target.value })} className="w-24 rounded border border-slate-300 px-1.5 py-1 text-sm focus:border-blue-500 focus:outline-none" />
+                        </td>
+                        <td className="px-4 py-1.5 text-right">
+                          <input type="number" min="0" step="5" value={editForm.breakMinutes} onChange={(e) => setEditForm((f) => f && { ...f, breakMinutes: e.target.value })} className="w-16 rounded border border-slate-300 px-1.5 py-1 text-sm text-right focus:border-blue-500 focus:outline-none" />
+                        </td>
+                        <td className="px-4 py-2 text-right font-medium text-slate-400">—</td>
+                        <td className="px-4 py-2">
+                          <Badge variant="warning">修正中</Badge>
+                        </td>
+                        <td className="px-4 py-2">
+                          {editForm.error && <span className="text-xs text-red-500">{editForm.error}</span>}
+                        </td>
+                        <td className="px-4 py-2">
+                          <form onSubmit={handleEditSubmit} className="flex items-center gap-1.5">
+                            <button type="submit" disabled={editForm.submitting} className="text-xs text-blue-600 hover:underline disabled:opacity-50">
+                              {editForm.submitting ? "送信中…" : "保存"}
+                            </button>
+                            <span className="text-slate-300">|</span>
+                            <button type="button" onClick={() => setEditForm(null)} className="text-xs text-slate-400 hover:text-slate-600">
+                              取消
+                            </button>
+                          </form>
+                        </td>
+                      </tr>
+                    );
+                  }
+
                   return (
                     <tr
                       key={rec.id}
@@ -330,35 +408,43 @@ export default function AttendanceListPage() {
                         {rec.doneToday ?? "—"}
                         {rec.isModified && <span className="ml-1 text-blue-500">（修正済）</span>}
                       </td>
-                      {isAdmin && (
-                        <td className="px-4 py-2">
-                          {approved ? (
-                            <span className="flex items-center gap-1 text-xs text-green-600">
-                              <CheckCircle size={12} /> 承認済
-                            </span>
-                          ) : rejected ? (
-                            <span className="flex items-center gap-1 text-xs text-red-500">
-                              <XCircle size={12} /> 否認済
-                            </span>
-                          ) : rec.isModified && rec.confirmStatus === "unconfirmed" ? (
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                onClick={() => handleApprove(rec.id)}
-                                className="text-xs text-blue-600 hover:underline"
-                              >
-                                承認
-                              </button>
-                              <span className="text-slate-300">|</span>
-                              <button
-                                onClick={() => handleReject(rec.id)}
-                                className="text-xs text-red-500 hover:underline"
-                              >
-                                否認
-                              </button>
-                            </div>
-                          ) : null}
-                        </td>
-                      )}
+                      <td className="px-4 py-2">
+                        <div className="flex items-center gap-1.5">
+                          <button onClick={() => startEdit(rec)} className="text-slate-400 hover:text-blue-600" title="修正">
+                            <Pencil size={14} />
+                          </button>
+                          {isAdmin && (
+                            <>
+                              {approved ? (
+                                <span className="flex items-center gap-1 text-xs text-green-600">
+                                  <CheckCircle size={12} /> 承認済
+                                </span>
+                              ) : rejected ? (
+                                <span className="flex items-center gap-1 text-xs text-red-500">
+                                  <XCircle size={12} /> 否認済
+                                </span>
+                              ) : rec.isModified && rec.confirmStatus === "unconfirmed" ? (
+                                <>
+                                  <span className="text-slate-300">|</span>
+                                  <button
+                                    onClick={() => handleApprove(rec.id)}
+                                    className="text-xs text-blue-600 hover:underline"
+                                  >
+                                    承認
+                                  </button>
+                                  <span className="text-slate-300">|</span>
+                                  <button
+                                    onClick={() => handleReject(rec.id)}
+                                    className="text-xs text-red-500 hover:underline"
+                                  >
+                                    否認
+                                  </button>
+                                </>
+                              ) : null}
+                            </>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
