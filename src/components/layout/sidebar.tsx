@@ -50,7 +50,7 @@ interface SidebarProps {
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
-  const { role } = useAuth();
+  const { role, isLoading } = useAuth();
 
   const isPrivileged = role === "admin" || role === "manager";
   const navItems = isPrivileged ? PRIVILEGED_NAV : MEMBER_NAV;
@@ -82,6 +82,13 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-3" suppressHydrationWarning>
+          {isLoading ? (
+            <div className="space-y-1.5 px-2">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-9 rounded-md bg-slate-100 animate-pulse" />
+              ))}
+            </div>
+          ) : (
           <ul className="space-y-0.5 px-2">
             {/* モバイル: 非ハブページにいる admin/manager 向け戻るリンク */}
             {showBackLink && (
@@ -120,6 +127,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               );
             })}
           </ul>
+          )}
         </nav>
 
         {/* Footer */}
