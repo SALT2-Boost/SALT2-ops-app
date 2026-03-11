@@ -278,28 +278,39 @@ function AdminClosingView() {
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Card>
-          <p className="text-xs text-slate-500">人件費合計</p>
-          <p className="mt-1 text-xl font-bold text-blue-700">{formatCurrency(totalLaborCost)}</p>
-        </Card>
-        <Card>
-          <p className="text-xs text-slate-500">請求書受領</p>
-          <p className={`mt-1 text-2xl font-bold ${receivedCount > 0 ? "text-green-600" : "text-slate-400"}`}>
-            {receivedCount}<span className="text-base font-normal text-slate-500">/{records.length}名</span>
-          </p>
-        </Card>
-        <Card>
-          <p className="text-xs text-slate-500">月次申告</p>
-          <p className={`mt-1 text-2xl font-bold ${selfReportDoneCount === records.length && records.length > 0 ? "text-green-600" : "text-amber-600"}`}>
-            {selfReportDoneCount}<span className="text-base font-normal text-slate-500">/{records.length}名</span>
-          </p>
-        </Card>
-        <Card>
-          <p className="text-xs text-slate-500">Slack通知</p>
-          <p className={`mt-1 text-2xl font-bold ${notSentCount > 0 ? "text-amber-600" : "text-green-600"}`}>
-            {notSentCount > 0 ? `未通知${notSentCount}名` : "全員通知済"}
-          </p>
-        </Card>
+        {loading ? (
+          [1, 2, 3, 4].map((i) => (
+            <Card key={i}>
+              <div className="h-4 w-20 rounded bg-slate-100 animate-pulse" />
+              <div className="mt-2 h-7 w-24 rounded bg-slate-100 animate-pulse" />
+            </Card>
+          ))
+        ) : (
+          <>
+            <Card>
+              <p className="text-xs text-slate-500">人件費合計</p>
+              <p className="mt-1 text-xl font-bold text-blue-700">{formatCurrency(totalLaborCost)}</p>
+            </Card>
+            <Card>
+              <p className="text-xs text-slate-500">請求書受領</p>
+              <p className={`mt-1 text-2xl font-bold ${receivedCount > 0 ? "text-green-600" : "text-slate-400"}`}>
+                {receivedCount}<span className="text-base font-normal text-slate-500">/{records.length}名</span>
+              </p>
+            </Card>
+            <Card>
+              <p className="text-xs text-slate-500">月次申告</p>
+              <p className={`mt-1 text-2xl font-bold ${selfReportDoneCount === records.length && records.length > 0 ? "text-green-600" : "text-amber-600"}`}>
+                {selfReportDoneCount}<span className="text-base font-normal text-slate-500">/{records.length}名</span>
+              </p>
+            </Card>
+            <Card>
+              <p className="text-xs text-slate-500">Slack通知</p>
+              <p className={`mt-1 text-2xl font-bold ${notSentCount > 0 ? "text-amber-600" : "text-green-600"}`}>
+                {notSentCount > 0 ? `未通知${notSentCount}名` : "全員通知済"}
+              </p>
+            </Card>
+          </>
+        )}
       </div>
 
       {/* 未打刻アラート */}
@@ -311,6 +322,7 @@ function AdminClosingView() {
       )}
 
       {/* Action bar */}
+      {!loading && (
       <div className="flex flex-wrap gap-3">
         <Button variant="outline" onClick={handleAggregate} disabled={loading}>
           <RefreshCw size={15} /> データを更新
@@ -321,6 +333,7 @@ function AdminClosingView() {
           </Button>
         )}
       </div>
+      )}
 
       {/* 自分の月次申告 */}
       <SelfReportCard month={targetMonth} myProjects={myProjects} />
