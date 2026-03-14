@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/backend/auth";
 import { prisma } from "@/backend/db";
+import { unauthorized, apiError } from "@/backend/api-response";
 
 export async function GET() {
   const user = await getSessionUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user) return unauthorized();
 
   // メンバー詳細とプロジェクトアサインを並列取得
   const [member, assignments] = await Promise.all([
@@ -53,7 +54,7 @@ export async function GET() {
     }),
   ]);
 
-  if (!member) return NextResponse.json({ error: "Not Found" }, { status: 404 });
+  if (!member) return apiError("NOT_FOUND", "メンバーが見つかりません", 404);
 
   return NextResponse.json({
     id: member.id,

@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/backend/auth";
 import { prisma } from "@/backend/db";
+import { unauthorized, apiError } from "@/backend/api-response";
 
 export async function GET(req: NextRequest) {
   const user = await getSessionUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user) return unauthorized();
 
   const isAdmin = user.role === "admin" || user.role === "manager";
 
   const { searchParams } = new URL(req.url);
   const month = searchParams.get("month"); // YYYY-MM
   if (!month || !/^\d{4}-\d{2}$/.test(month)) {
-    return NextResponse.json({ error: "month は YYYY-MM 形式で指定してください" }, { status: 400 });
+    return apiError("VALIDATION_ERROR", "month は YYYY-MM 形式で指定してください", 400);
   }
 
   // 月の開始・終了

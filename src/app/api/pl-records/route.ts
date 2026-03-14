@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/backend/auth";
 import { prisma } from "@/backend/db";
+import { unauthorized, forbidden, apiError } from "@/backend/api-response";
 
 // GET /api/pl-records?month=YYYY-MM&projectId=xxx&months=YYYY-MM,YYYY-MM,...
 export async function GET(req: NextRequest) {
   const user = await getSessionUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user) return unauthorized();
   // 閲覧は全ロールに開放（編集は admin/manager のみ）
 
   const { searchParams } = new URL(req.url);
@@ -21,7 +22,7 @@ export async function GET(req: NextRequest) {
     : [];
 
   if (targetMonths.length === 0) {
-    return NextResponse.json({ error: "month または months は必須です" }, { status: 400 });
+    return apiError("BAD_REQUEST", "month または months は必須です", 400);
   }
 
   const records = await prisma.pLRecord.findMany({
@@ -70,9 +71,9 @@ export async function GET(req: NextRequest) {
 // PUT /api/pl-records — admin / manager 手動入力・更新 (upsert)
 export async function PUT(req: NextRequest) {
   const user = await getSessionUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user) return unauthorized();
   if (user.role !== "admin" && user.role !== "manager") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    return forbidden();
   }
 
   const body = await req.json() as {
@@ -91,7 +92,7 @@ export async function PUT(req: NextRequest) {
 
   const { projectId, targetMonth, ...rest } = body;
   if (!projectId || !targetMonth) {
-    return NextResponse.json({ error: "projectId と targetMonth は必須です" }, { status: 400 });
+    return apiError("BAD_REQUEST", "projectId と targetMonth は必須です", 400);
   }
 
   // 粗利計算
@@ -147,16 +148,16 @@ export async function PUT(req: NextRequest) {
 // PATCH /api/pl-records — 掛け率・追加売上の部分更新（admin / manager）
 export async function PATCH(req: NextRequest) {
   const user = await getSessionUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (user.role !== "admin" && user.role !== "manager") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!user) return unauthorized();
+  if (user.role !== "admin" && user.role !== "manager") return forbidden();
 
   const body = await req.json() as { id: string; markupRate?: number; revenueExtra?: number };
   if (!body.id) {
-    return NextResponse.json({ error: "id は必須です" }, { status: 400 });
+    return apiError("BAD_REQUEST", "id は必須です", 400);
   }
 
   const current = await prisma.pLRecord.findUnique({ where: { id: body.id } });
-  if (!current) return NextResponse.json({ error: "Not Found" }, { status: 404 });
+  if (!current) return apiError("NOT_FOUND", "PLレコードが見つかりません", 404);
 
   const laborCost = current.costLaborMonthly + current.costLaborHourly + current.costOutsourcing;
 

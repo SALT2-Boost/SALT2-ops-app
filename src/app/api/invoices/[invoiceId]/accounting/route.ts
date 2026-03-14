@@ -3,6 +3,7 @@ import { getSessionUser } from "@/backend/auth";
 import { prisma } from "@/backend/db";
 import { generateInvoiceExcel } from "@/backend/invoice-excel";
 import { sendEmail } from "@/backend/email";
+import { unauthorized, forbidden, apiError } from "@/backend/api-response";
 
 // PATCH /api/invoices/[invoiceId]/accounting
 // admin/manager: LayerX へメール送付 → status を confirmed に更新
@@ -11,9 +12,9 @@ export async function PATCH(
   { params }: { params: Promise<{ invoiceId: string }> }
 ) {
   const user = await getSessionUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user) return unauthorized();
   if (user.role !== "admin" && user.role !== "manager") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    return forbidden();
   }
 
   const { invoiceId } = await params;
@@ -36,7 +37,7 @@ export async function PATCH(
   });
 
   if (!invoice) {
-    return NextResponse.json({ error: "請求書が見つかりません" }, { status: 404 });
+    return apiError("NOT_FOUND", "請求書が見つかりません", 404);
   }
 
   // ── Excel 再生成 ───────────────────────────────────────
@@ -75,10 +76,25 @@ export async function PATCH(
     });
   }
 
-  // ── ステータス更新 ─────────────────────────────────────
-  await prisma.invoice.update({
-    where: { id: invoiceId },
-    data: { status: "confirmed" },
+  // ── ステータス更新 + 監査ログ ────────────────────────────
+  const ip = _req.headers.get("x-forwarded-for") ?? _req.headers.get("x-real-ip") ?? "127.0.0.1";
+  await prisma.$transaction(async (tx) => {
+    await tx.invoice.update({
+      where: { id: invoiceId },
+      data: { status: "confirmed" },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        operatorId: user.id,
+        targetTable: "invoices",
+        targetId: invoiceId,
+        action: "UPDATE",
+        beforeData: { status: invoice.status },
+        afterData: { status: "confirmed" },
+        ipAddress: ip,
+      },
+    });
   });
 
   return NextResponse.json({ ok: true });

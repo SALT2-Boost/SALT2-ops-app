@@ -2,20 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/backend/auth";
 import { prisma } from "@/backend/db";
 import { getSlackUserId, sendSlackDM } from "@/backend/slack";
+import { unauthorized, forbidden, apiError } from "@/backend/api-response";
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { memberId: string } }
 ) {
   const user = await getSessionUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user) return unauthorized();
   if (user.role !== "admin" && user.role !== "manager") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    return forbidden();
   }
 
   const { month } = await req.json() as { month: string };
   if (!month || !/^\d{4}-\d{2}$/.test(month)) {
-    return NextResponse.json({ error: "month は YYYY-MM 形式で指定してください" }, { status: 400 });
+    return apiError("VALIDATION_ERROR", "month は YYYY-MM 形式で指定してください", 400);
   }
 
   const [year, mon] = month.split("-").map(Number);
@@ -42,7 +43,7 @@ export async function PATCH(
   ]);
 
   if (!member) {
-    return NextResponse.json({ error: "メンバーが見つかりません" }, { status: 404 });
+    return apiError("NOT_FOUND", "メンバーが見つかりません", 404);
   }
 
   const workingDays = summary?.workDays ?? 0;

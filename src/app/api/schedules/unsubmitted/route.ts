@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/backend/db";
 import { getSessionUser } from "@/backend/auth";
+import { unauthorized, forbidden } from "@/backend/api-response";
 
 // 翌週の月曜〜日曜を返す
 function getNextWeekRange(): { from: Date; to: Date; fromStr: string; toStr: string } {
@@ -24,9 +25,9 @@ function getNextWeekRange(): { from: Date; to: Date; fromStr: string; toStr: str
 // 翌週（月〜日）に勤務予定を1件も登録していないアクティブメンバーを返す
 export async function GET() {
   const user = await getSessionUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user) return unauthorized();
   if (!["admin", "manager"].includes(user.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    return forbidden();
   }
 
   const { from, to, fromStr, toStr } = getNextWeekRange();

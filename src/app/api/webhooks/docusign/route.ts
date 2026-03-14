@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { type MemberContractStatus } from "@prisma/client";
 import { prisma } from "@/backend/db";
 import { verifyWebhookSignature } from "@/backend/docusign";
+import { unauthorized, apiError } from "@/backend/api-response";
 
 // DocuSign Connect Webhook ステータスマッピング
 const DOCUSIGN_STATUS_MAP: Record<string, MemberContractStatus> = {
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest) {
   // HMAC 署名検証
   const signatureHeader = req.headers.get("x-docusign-signature-1") ?? "";
   if (!verifyWebhookSignature(rawBody, signatureHeader)) {
-    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    return unauthorized();
   }
 
   let payload: {
@@ -32,13 +33,13 @@ export async function POST(req: NextRequest) {
   try {
     payload = JSON.parse(rawBody);
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return apiError("BAD_REQUEST", "Invalid JSON", 400);
   }
 
   const { envelopeId, status: dsStatus, completedDateTime } = payload;
 
   if (!envelopeId || !dsStatus) {
-    return NextResponse.json({ error: "Missing envelopeId or status" }, { status: 400 });
+    return apiError("BAD_REQUEST", "Missing envelopeId or status", 400);
   }
 
   const newStatus = DOCUSIGN_STATUS_MAP[dsStatus.toLowerCase()];

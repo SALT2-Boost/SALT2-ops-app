@@ -1,13 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/backend/auth";
+import { unauthorized, forbidden } from "@/backend/api-response";
 import { getTemplates } from "@/backend/docusign";
 
-function unauthorized() {
-  return NextResponse.json({ error: { code: "UNAUTHORIZED", message: "ログインが必要です" } }, { status: 401 });
-}
-function forbidden() {
-  return NextResponse.json({ error: { code: "FORBIDDEN", message: "権限がありません" } }, { status: 403 });
-}
 
 // GET /api/contracts/templates
 // admin のみ: DocuSign テンプレート一覧取得

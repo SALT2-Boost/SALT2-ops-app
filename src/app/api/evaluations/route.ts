@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/backend/db";
+import { unauthorized, forbidden } from "@/backend/api-response";
 import { getSessionUser } from "@/backend/auth";
 
-function unauthorized() {
-  return NextResponse.json({ error: { code: "UNAUTHORIZED", message: "ログインが必要です" } }, { status: 401 });
-}
-function forbidden() {
-  return NextResponse.json({ error: { code: "FORBIDDEN", message: "権限がありません" } }, { status: 403 });
-}
 
 function scoreLabel(n: number) {
   return ["", "要改善", "普通以下", "標準", "優秀", "卓越"][n] ?? "—";
@@ -141,17 +136,36 @@ export async function POST(req: NextRequest) {
     where: { memberId_targetPeriod: { memberId, targetPeriod } },
   });
 
-  let ev;
-  if (existing) {
-    ev = await prisma.personnelEvaluation.update({
-      where: { id: existing.id },
-      data: { scoreP, scoreA, scoreS, comment: comment ?? null, evaluatorId: user.id },
+  const ip = req.headers.get("x-forwarded-for") ?? req.headers.get("x-real-ip") ?? "127.0.0.1";
+  const evalData = { scoreP, scoreA, scoreS, comment: comment ?? null };
+
+  const ev = await prisma.$transaction(async (tx) => {
+    let record;
+    if (existing) {
+      record = await tx.personnelEvaluation.update({
+        where: { id: existing.id },
+        data: { ...evalData, evaluatorId: user.id },
+      });
+    } else {
+      record = await tx.personnelEvaluation.create({
+        data: { memberId, evaluatorId: user.id, targetPeriod, ...evalData },
+      });
+    }
+
+    await tx.auditLog.create({
+      data: {
+        operatorId: user.id,
+        targetTable: "personnel_evaluations",
+        targetId: record.id,
+        action: existing ? "UPDATE" : "CREATE",
+        ...(existing ? { beforeData: { scoreP: existing.scoreP, scoreA: existing.scoreA, scoreS: existing.scoreS } } : {}),
+        afterData: { memberId, targetPeriod, ...evalData },
+        ipAddress: ip,
+      },
     });
-  } else {
-    ev = await prisma.personnelEvaluation.create({
-      data: { memberId, evaluatorId: user.id, targetPeriod, scoreP, scoreA, scoreS, comment: comment ?? null },
-    });
-  }
+
+    return record;
+  });
 
   const totalAvg = Math.round(((ev.scoreP + ev.scoreA + ev.scoreS) / 3) * 100) / 100;
   return NextResponse.json(

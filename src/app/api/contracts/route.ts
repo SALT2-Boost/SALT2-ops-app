@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { type MemberContractStatus } from "@prisma/client";
 import { prisma } from "@/backend/db";
+import { unauthorized, forbidden } from "@/backend/api-response";
 import { getSessionUser } from "@/backend/auth";
 import { z } from "zod";
 
@@ -31,12 +32,6 @@ const existingMemberContractSchema = z.object({
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
-function unauthorized() {
-  return NextResponse.json({ error: { code: "UNAUTHORIZED", message: "ログインが必要です" } }, { status: 401 });
-}
-function forbidden() {
-  return NextResponse.json({ error: { code: "FORBIDDEN", message: "権限がありません" } }, { status: 403 });
-}
 
 // POST /api/contracts
 // admin のみ: 新規メンバー or 既存メンバーに対して契約ドラフトを作成
@@ -80,6 +75,8 @@ export async function POST(req: NextRequest) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    const ip = req.headers.get("x-forwarded-for") ?? req.headers.get("x-real-ip") ?? "127.0.0.1";
+
     // Member + UserAccount + Contract をトランザクションで作成
     const [, contract] = await prisma.$transaction(async (tx) => {
       const member = await tx.member.create({
@@ -120,6 +117,17 @@ export async function POST(req: NextRequest) {
         },
       });
 
+      await tx.auditLog.create({
+        data: {
+          operatorId: user.id,
+          targetTable: "member_contracts",
+          targetId: c.id,
+          action: "CREATE",
+          afterData: { memberId: member.id, templateName: d.templateName, memberType: "new" },
+          ipAddress: ip,
+        },
+      });
+
       return [member, c];
     });
 
@@ -157,16 +165,33 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const contract = await prisma.memberContract.create({
-    data: {
-      memberId: d.memberId,
-      templateName: d.templateName,
-      docusignTemplateId: d.docusignTemplateId ?? null,
-      signerEmail: d.signerEmail,
-      status: "draft",
-      startDate: d.startDate ? new Date(d.startDate) : null,
-      endDate: d.endDate ? new Date(d.endDate) : null,
-    },
+  const ip = req.headers.get("x-forwarded-for") ?? req.headers.get("x-real-ip") ?? "127.0.0.1";
+
+  const contract = await prisma.$transaction(async (tx) => {
+    const c = await tx.memberContract.create({
+      data: {
+        memberId: d.memberId,
+        templateName: d.templateName,
+        docusignTemplateId: d.docusignTemplateId ?? null,
+        signerEmail: d.signerEmail,
+        status: "draft",
+        startDate: d.startDate ? new Date(d.startDate) : null,
+        endDate: d.endDate ? new Date(d.endDate) : null,
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        operatorId: user.id,
+        targetTable: "member_contracts",
+        targetId: c.id,
+        action: "CREATE",
+        afterData: { memberId: d.memberId, templateName: d.templateName, memberType: "existing" },
+        ipAddress: ip,
+      },
+    });
+
+    return c;
   });
 
   return NextResponse.json(

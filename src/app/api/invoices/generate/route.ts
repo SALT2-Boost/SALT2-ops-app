@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/backend/auth";
 import { prisma } from "@/backend/db";
 import { generateInvoiceExcel } from "@/backend/invoice-excel";
+import { unauthorized, apiError } from "@/backend/api-response";
 
 function calcAmounts(items: { amount: number; taxable?: boolean }[]) {
   const taxableTotal = items.filter((i) => i.taxable !== false).reduce((s, i) => s + i.amount, 0);
@@ -16,7 +17,7 @@ function calcAmounts(items: { amount: number; taxable?: boolean }[]) {
 // POST /api/invoices/generate — DB保存 + Excel生成 + ファイル返却
 export async function POST(req: NextRequest) {
   const user = await getSessionUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user) return unauthorized();
 
   const body = await req.json() as {
     targetMonth: string;
@@ -27,10 +28,10 @@ export async function POST(req: NextRequest) {
   const { targetMonth, items, note } = body;
 
   if (!targetMonth || !/^\d{4}-\d{2}$/.test(targetMonth)) {
-    return NextResponse.json({ error: "targetMonth は YYYY-MM 形式で指定してください" }, { status: 400 });
+    return apiError("VALIDATION_ERROR", "targetMonth は YYYY-MM 形式で指定してください", 400);
   }
   if (!Array.isArray(items) || items.length === 0) {
-    return NextResponse.json({ error: "items は1件以上必要です" }, { status: 400 });
+    return apiError("VALIDATION_ERROR", "items は1件以上必要です", 400);
   }
 
   const { amountExclTax, expenseAmount, amountInclTax } = calcAmounts(items);

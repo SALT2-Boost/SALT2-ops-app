@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/backend/auth";
 import { prisma } from "@/backend/db";
 import { ProjectStatus } from "@prisma/client";
+import { unauthorized, apiError } from "@/backend/api-response";
 
 const toHHMM = (dt: Date | null) => {
   if (!dt) return null;
@@ -11,14 +12,14 @@ const toHHMM = (dt: Date | null) => {
 
 export async function GET(req: NextRequest) {
   const user = await getSessionUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user) return unauthorized();
   const { searchParams } = new URL(req.url);
   const from = searchParams.get("from");
   const to = searchParams.get("to");
   const memberIdsParam = searchParams.get("memberIds");
 
   if (!from || !to) {
-    return NextResponse.json({ error: "from と to は必須です" }, { status: 400 });
+    return apiError("BAD_REQUEST", "from と to は必須です", 400);
   }
 
   const fromDate = new Date(from);

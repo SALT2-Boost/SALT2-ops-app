@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/backend/auth";
 import { prisma } from "@/backend/db";
+import { unauthorized, apiError } from "@/backend/api-response";
 
 function scoreLabel(n: number) {
   return ["", "要改善", "普通以下", "標準", "優秀", "卓越"][n] ?? "—";
@@ -10,7 +11,7 @@ function scoreLabel(n: number) {
 // メンバー情報・スキル・プロジェクト・評価履歴を一括取得（マイページ用）
 export async function GET() {
   const user = await getSessionUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user) return unauthorized();
 
   const [member, assignments, evaluations] = await Promise.all([
     prisma.member.findFirst({
@@ -63,7 +64,7 @@ export async function GET() {
     }),
   ]);
 
-  if (!member) return NextResponse.json({ error: "Not Found" }, { status: 404 });
+  if (!member) return apiError("NOT_FOUND", "メンバーが見つかりません", 404);
 
   return NextResponse.json({
     member: {

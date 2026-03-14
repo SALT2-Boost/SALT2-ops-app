@@ -1,20 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/backend/db";
+import { unauthorized, forbidden } from "@/backend/api-response";
 import { getSessionUser } from "@/backend/auth";
 import { updateMemberSchema } from "@/backend/validations/member";
 
-function unauthorized() {
-  return NextResponse.json(
-    { error: { code: "UNAUTHORIZED", message: "ログインが必要です" } },
-    { status: 401 }
-  );
-}
-function forbidden() {
-  return NextResponse.json(
-    { error: { code: "FORBIDDEN", message: "権限がありません" } },
-    { status: 403 }
-  );
-}
 function notFound() {
   return NextResponse.json(
     { error: { code: "NOT_FOUND", message: "メンバーが見つかりません" } },

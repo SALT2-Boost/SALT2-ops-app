@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/backend/db";
+import { unauthorized, forbidden } from "@/backend/api-response";
 import { getSessionUser } from "@/backend/auth";
 
-function unauthorized() {
-  return NextResponse.json({ error: { code: "UNAUTHORIZED", message: "ログインが必要です" } }, { status: 401 });
-}
 
 // GET /api/self-reports?month=YYYY-MM
 // admin/manager: 全メンバーの申告状況を返す（未申告メンバーも含む）

@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/backend/db";
+import { unauthorized, forbidden } from "@/backend/api-response";
 import { getSessionUser } from "@/backend/auth";
 import { voidEnvelope } from "@/backend/docusign";
 
-function unauthorized() {
-  return NextResponse.json({ error: { code: "UNAUTHORIZED", message: "ログインが必要です" } }, { status: 401 });
-}
-function forbidden() {
-  return NextResponse.json({ error: { code: "FORBIDDEN", message: "権限がありません" } }, { status: 403 });
-}
 
 // PUT /api/members/[id]/contracts/[cId]/void
 // admin のみ: 契約を無効化

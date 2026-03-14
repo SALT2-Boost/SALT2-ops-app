@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/backend/auth";
 import { prisma } from "@/backend/db";
+import { unauthorized } from "@/backend/api-response";
 
 export async function GET(req: Request) {
   const user = await getSessionUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user) return unauthorized();
 
   // JST 基準の「今日」0時を計算
   const jstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);

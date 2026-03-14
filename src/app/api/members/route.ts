@@ -2,22 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { hash } from "bcryptjs";
 import { type UserRole } from "@prisma/client";
 import { prisma } from "@/backend/db";
+import { unauthorized, forbidden } from "@/backend/api-response";
 import { getSessionUser } from "@/backend/auth";
 import { createMemberSchema } from "@/backend/validations/member";
 
 // ─── 共通レスポンスヘルパー ────────────────────────────────
-function unauthorized() {
-  return NextResponse.json(
-    { error: { code: "UNAUTHORIZED", message: "ログインが必要です" } },
-    { status: 401 }
-  );
-}
-function forbidden() {
-  return NextResponse.json(
-    { error: { code: "FORBIDDEN", message: "権限がありません" } },
-    { status: 403 }
-  );
-}
 
 // ─── GET /api/members ─────────────────────────────────────
 export async function GET(req: NextRequest) {

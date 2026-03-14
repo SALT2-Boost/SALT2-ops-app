@@ -118,11 +118,6 @@ export function WeekView({ weekDays, visible, calData }: {
                   {HOURS.map(h => (
                     <div key={`${h}h`} className="absolute inset-x-0 border-t border-slate-50" style={{ top: (h - START_HOUR) * HOUR_PX + HOUR_PX / 2 }} />
                   ))}
-                  {/* 深夜ラベル */}
-                  <div className="absolute inset-x-0 pointer-events-none z-[1]"
-                    style={{ top: (24 - START_HOUR) * HOUR_PX - 9 }}>
-                    <span className="absolute right-1 text-[9px] font-bold text-slate-500 bg-white px-0.5 leading-none">日付変更</span>
-                  </div>
 
                   {day.isToday && currentY >= 0 && currentY <= GRID_H && (
                     <div className="absolute inset-x-0 z-10 flex items-center pointer-events-none" style={{ top: currentY }}>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/backend/auth";
 import { prisma } from "@/backend/db";
+import { unauthorized, forbidden, apiError } from "@/backend/api-response";
 
 /**
  * POST /api/pl-records/generate
@@ -20,14 +21,14 @@ import { prisma } from "@/backend/db";
  */
 export async function POST(req: NextRequest) {
   const user = await getSessionUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (user.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!user) return unauthorized();
+  if (user.role !== "admin") return forbidden();
 
   const body = await req.json().catch(() => ({})) as { targetMonth?: string };
   const { targetMonth } = body;
 
   if (!targetMonth || !/^\d{4}-\d{2}$/.test(targetMonth)) {
-    return NextResponse.json({ error: "targetMonth は YYYY-MM 形式で必須です" }, { status: 400 });
+    return apiError("VALIDATION_ERROR", "targetMonth は YYYY-MM 形式で必須です", 400);
   }
 
   // ── 1. 当月の自己申告を全件取得 ────────────────────────────

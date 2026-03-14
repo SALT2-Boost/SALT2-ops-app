@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/backend/db";
 import { getSlackMention, sendSlack } from "@/backend/slack";
+import { unauthorized } from "@/backend/api-response";
 
 // 翌週月曜〜日曜の範囲を返す
 function getNextWeekRange() {
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
   const secret = process.env.CRON_SECRET;
   if (secret && authHeader !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return unauthorized();
   }
 
   const { from, to, label } = getNextWeekRange();

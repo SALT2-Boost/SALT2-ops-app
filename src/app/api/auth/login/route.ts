@@ -3,6 +3,7 @@ import { compare } from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/backend/db";
 import { getSession, type AppRole } from "@/backend/auth";
+import { apiError } from "@/backend/api-response";
 
 const loginSchema = z.object({
   email: z.email(),
@@ -13,7 +14,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const parsed = loginSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: "入力値が不正です" }, { status: 400 });
+    return apiError("VALIDATION_ERROR", "入力値が不正です", 400);
   }
 
   const { email, password } = parsed.data;
@@ -26,18 +27,12 @@ export async function POST(req: NextRequest) {
   });
 
   if (!account) {
-    return NextResponse.json(
-      { error: "メールアドレスまたはパスワードが正しくありません。" },
-      { status: 401 }
-    );
+    return apiError("UNAUTHORIZED", "メールアドレスまたはパスワードが正しくありません。", 401);
   }
 
   const valid = await compare(password, account.passwordHash);
   if (!valid) {
-    return NextResponse.json(
-      { error: "メールアドレスまたはパスワードが正しくありません。" },
-      { status: 401 }
-    );
+    return apiError("UNAUTHORIZED", "メールアドレスまたはパスワードが正しくありません。", 401);
   }
 
   // DBのUserRole（employee / intern_full / intern_training / training_member）を

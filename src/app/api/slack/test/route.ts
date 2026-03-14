@@ -1,17 +1,18 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/backend/auth";
 import { sendSlack } from "@/backend/slack";
+import { unauthorized, apiError } from "@/backend/api-response";
 
 export async function POST() {
   const user = await getSessionUser();
   if (!user || user.role !== "admin") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return unauthorized();
   }
 
   try {
     await sendSlack("✅ Slack 接続テスト成功（統合業務管理システム）");
     return NextResponse.json({ ok: true });
   } catch {
-    return NextResponse.json({ error: "Slack 送信に失敗しました" }, { status: 500 });
+    return apiError("INTERNAL_ERROR", "Slack 送信に失敗しました", 500);
   }
 }
